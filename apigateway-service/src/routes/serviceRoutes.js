@@ -12,6 +12,19 @@ const { createProxyMiddleware } = require("http-proxy-middleware");
 // Configure multer for file uploads
 const upload = multer({
   limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit for files
+  },
+});
+
+// Separate multer configurations for different routes
+const categoryUpload = multer({
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit for category images
+  },
+}).single("imageUrl"); // Configure for single file upload with field name 'imageUrl'
+
+const pdfUpload = multer({
+  limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit for PDF files
   },
 }).fields([
@@ -127,7 +140,6 @@ const eBookServiceProxy = createProxyMiddleware({
   target: EBOOK_SERVICE_URL,
   changeOrigin: true,
   pathRewrite: {
-    "^/api/v1/ebook/category": "/api/category",
     "^/api/v1/ebook/pdf": "/api/pdf",
   },
   onProxyReq: function (proxyReq, req, res) {
@@ -213,35 +225,54 @@ router.use(
   verifyToken,
   (req, res, next) => {
     const method = req.method;
-    if (
-      method === "POST" ||
-      method === "PUT" ||
-      method === "PATCH" ||
-      method === "DELETE"
-    ) {
-      // Write operations - Admin only with Write permission
+    if (method === "POST" || method === "PUT" || method === "DELETE") {
       authorizeRoles(["ADMIN"])(req, res, () => {
         authorizePermissions(["Write_Data"])(req, res, next);
       });
     } else {
-      // Read operations - Admin and Student with Read permission
       authorizeRoles(["ADMIN", "STUDENT"])(req, res, () => {
         authorizePermissions(["Read_Data"])(req, res, next);
       });
     }
   },
-  (req, res, next) => {
-    upload(req, res, (err) => {
-      if (err) {
-        console.error("Multer error:", err);
-        return res
-          .status(400)
-          .json({ message: "File upload error", error: err.message });
+  categoryUpload,
+  createProxyMiddleware({
+    target: EBOOK_SERVICE_URL,
+    pathRewrite: {
+      "^/api/v1/ebook/category": "/api/category",
+    },
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req, res) => {
+      if (req.file) {
+        const formData = new FormData();
+        // Add the file
+        formData.append("imageUrl", req.file.buffer, req.file.originalname);
+        
+        // Add other fields from the request body
+        Object.keys(req.body).forEach(key => {
+          formData.append(key, req.body[key]);
+        });
+        
+        // Set the correct headers
+        proxyReq.setHeader("Content-Type", `multipart/form-data; boundary=${formData._boundary}`);
+        formData.pipe(proxyReq);
+      } else if (req.body && Object.keys(req.body).length > 0) {
+        const bodyData = JSON.stringify(req.body);
+        proxyReq.setHeader("Content-Type", "application/json");
+        proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+        proxyReq.write(bodyData);
       }
-      next();
-    });
-  },
-  eBookServiceProxy
+    },
+    onError: (err, req, res) => {
+      console.error("Category Proxy Error:", err);
+      res.status(500).json({ 
+        message: "Category service error", 
+        error: err.message 
+      });
+    },
+    proxyTimeout: 120000,
+    timeout: 120000,
+  })
 );
 
 // eBook PDF Routes
@@ -264,117 +295,36 @@ router.use(
       authorizeRoles(["ADMIN"])(req, res, () => {
         authorizePermissions(["Write_Data"])(req, res, next);
       });
-    }
-    // Delete PDF - Only ADMIN with Write_Data permission
-    else if (method === "DELETE") {
-      if (userRole !== "ADMIN") {
-        return res.status(403).json({
-          message: "Access denied - Only ADMIN can delete eBook PDFs",
-        });
-      }
-      authorizeRoles(["ADMIN"])(req, res, () => {
-        authorizePermissions(["Write_Data"])(req, res, next);
-      });
-    }
-    // GET operations - Both ADMIN and STUDENT with Read_Data permission
-    else if (method === "GET") {
-      if (!["ADMIN", "STUDENT"].includes(userRole)) {
-        return res.status(403).json({
-          message: "Access denied - Only ADMIN and STUDENT can view eBook PDFs",
-        });
-      }
+    } else {
+      // For other methods, allow both ADMIN and STUDENT with Read_Data
       authorizeRoles(["ADMIN", "STUDENT"])(req, res, () => {
         authorizePermissions(["Read_Data"])(req, res, next);
       });
     }
-    // Any other operations - Block by default
-    else {
-      return res.status(403).json({
-        message: "Operation not allowed",
-      });
-    }
-  },
-  upload,
-  (req, res, next) => {
-    if (req.method === "POST") {
-      console.log("Files received:", req.files);
-      console.log("Body received:", req.body);
-
-      if (!req.files || (!req.files.pdfUrl && !req.files.thumbnailUrl)) {
-        return res.status(400).json({
-          message: "Required files missing. Please upload PDF and thumbnail.",
-        });
-      }
-
-      // Create a new FormData instance
-      const form = new FormData();
-
-      // Append all form fields
-      Object.keys(req.body).forEach((key) => {
-        form.append(key, req.body[key]);
-      });
-
-      // Append files with their original names and types
-      if (req.files.pdfUrl) {
-        form.append("pdfUrl", req.files.pdfUrl[0].buffer, {
-          filename: req.files.pdfUrl[0].originalname,
-          contentType: req.files.pdfUrl[0].mimetype,
-        });
-      }
-      if (req.files.thumbnailUrl) {
-        form.append("thumbnailUrl", req.files.thumbnailUrl[0].buffer, {
-          filename: req.files.thumbnailUrl[0].originalname,
-          contentType: req.files.thumbnailUrl[0].mimetype,
-        });
-      }
-
-      // Store the form data and headers for the proxy
-      req.formData = form;
-      req.formDataHeaders = form.getHeaders();
-    }
-    next();
   },
   createProxyMiddleware({
     target: EBOOK_SERVICE_URL,
-    changeOrigin: true,
     pathRewrite: {
       "^/api/v1/ebook/pdf": "/api/pdf",
     },
-    onProxyReq: function (proxyReq, req, res) {
-      console.log("Proxying eBook request to:", proxyReq.path);
-      console.log("User Role:", req.user.role);
-      console.log("User Permissions:", req.user.permissions);
-
-      if (req.formData) {
-        // Set the headers from the form data
-        Object.entries(req.formDataHeaders).forEach(([header, value]) => {
-          proxyReq.setHeader(header, value);
-        });
-
-        // Write the form data to the proxy request
-        req.formData.pipe(proxyReq);
-      } else if (req.body && Object.keys(req.body).length > 0) {
-        // For JSON requests
-        const bodyData = JSON.stringify(req.body);
-        proxyReq.setHeader("Content-Type", "application/json");
-        proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
-        proxyReq.write(bodyData);
-      }
-    },
-    onProxyRes: function (proxyRes, req, res) {
-      console.log("Proxy response status:", proxyRes.statusCode);
-      if (proxyRes.statusCode !== 200) {
-        console.log("Proxy response headers:", proxyRes.headers);
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req, res) => {
+      if (req.file || req.files) {
+        const formData = new FormData();
+        if (req.file) {
+          formData.append("file", req.file.buffer, req.file.originalname);
+        }
+        if (req.files) {
+          Object.keys(req.files).forEach((key) => {
+            formData.append(key, req.files[key][0].buffer, req.files[key][0].originalname);
+          });
+        }
+        proxyReq.setHeader("Content-Type", `multipart/form-data; boundary=${formData._boundary}`);
       }
     },
     onError: (err, req, res) => {
-      console.error("eBook Service Proxy Error:", err);
-      res.status(500).json({
-        message: "eBook service unavailable",
-        error: err.message,
-        code: err.code,
-        details: err.stack,
-      });
+      console.error("Proxy error:", err);
+      res.status(500).json({ message: "Proxy error", error: err.message });
     },
     proxyTimeout: 300000, // 5 minutes
     timeout: 300000,

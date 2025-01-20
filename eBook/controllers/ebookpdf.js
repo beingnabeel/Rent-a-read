@@ -17,11 +17,25 @@ const createEbook = asyncHandler(async (req, res, next) => {
     if (!req.files || !req.files.thumbnailUrl || !req.files.pdfUrl) {
       return next(new ErrorResponse(STATUS_CODES.BAD_REQUEST, EBOOK_ERRORS.NO_FILES_FOUND));
     }
-  
+
     try {
-      const thumbnailUrl = await uploadToS3(req.files.thumbnailUrl[0], 'ebooks/thumbnails');
-      const pdfUrl = await uploadToS3(req.files.pdfUrl[0], 'ebooks/pdf');
-  
+      // Check if ISBN already exists
+      const existingBook = await eBookLibrary.findOne({ Isbn });
+      if (existingBook) {
+        return next(new ErrorResponse(STATUS_CODES.BAD_REQUEST, `eBook with ISBN ${Isbn} already exists`));
+      }
+
+      // Upload files to S3
+      let thumbnailUrl, pdfUrl;
+      try {
+        thumbnailUrl = await uploadToS3(req.files.thumbnailUrl[0], 'ebooks/thumbnails');
+        pdfUrl = await uploadToS3(req.files.pdfUrl[0], 'ebooks/pdf');
+      } catch (uploadError) {
+        logger.error(`Error uploading files to S3: ${uploadError.message}`);
+        return next(new ErrorResponse(STATUS_CODES.SERVER_ERROR, 'Failed to upload files to storage'));
+      }
+
+      // Create eBook document
       const ebook = await eBookLibrary.create({
         title,
         description,
@@ -44,10 +58,25 @@ const createEbook = asyncHandler(async (req, res, next) => {
       });
     } catch (error) {
       logger.error(`Error creating eBook: ${error.message}`);
+      
+      // Handle specific MongoDB errors
+      if (error.code === 11000) {
+        return next(new ErrorResponse(
+          STATUS_CODES.BAD_REQUEST,
+          `Duplicate entry found. An eBook with this ${Object.keys(error.keyPattern)[0]} already exists.`
+        ));
+      }
+
+      // Handle validation errors
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(err => err.message);
+        return next(new ErrorResponse(STATUS_CODES.BAD_REQUEST, messages.join(', ')));
+      }
+
       next(new ErrorResponse(STATUS_CODES.SERVER_ERROR, 'eBook creation failed'));
     }
 });
-  
+
 // @desc    Get all eBooks
 // @route   GET /api/ebook
 // @access  Public
@@ -98,9 +127,6 @@ const getEbookById = asyncHandler(async (req, res, next) => {
   }
 });
 
-// @desc    Update an eBook
-// @route   PUT /api/ebook/:id
-// @access  Private
 // @desc    Update an eBook
 // @route   PUT /api/ebook/:id
 // @access  Private
