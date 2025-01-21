@@ -106,6 +106,56 @@ const getDefaultAddress = async (userId, authToken) => {
   }
 };
 
+// Helper function to get school address and details
+const getSchoolAddress = async (schoolId, authToken) => {
+  try {
+    const response = await axios.get(
+      `http://127.0.0.1:4002/api/v1/schools-service/schools/${schoolId}`,
+      {
+        headers: {
+          Authorization: authToken,
+        },
+      }
+    );
+
+    const school = response.data?.data?.school || response.data;
+    
+    if (!school) {
+      throw new AppError("School not found", 404);
+    }
+
+    // Log school data for debugging
+    console.log("School data:", JSON.stringify(school, null, 2));
+
+    if (!school.stockManagementAllowed) {
+      throw new AppError(
+        "School does not have stock management enabled. Please provide delivery address in the request body",
+        400
+      );
+    }
+
+    // Concatenate address fields
+    const deliveryAddress = `${school.name}, ${school.branch}, ${school.address}, ${school.pincode}`.replace(/,\s*,/g, ',').trim();
+    
+    console.log("Constructed delivery address:", deliveryAddress);
+    
+    return {
+      address: deliveryAddress,
+      weekDay: school.weekDay,
+      stockManagementAllowed: school.stockManagementAllowed
+    };
+  } catch (error) {
+    console.error("School fetch error:", error.response?.data || error.message);
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError(
+      `Failed to fetch school: ${error.response?.data?.message || error.message}`,
+      error.response?.status || 500
+    );
+  }
+};
+
 // Helper function to validate subscription
 const validateSubscription = async (subscriptionId, userId, authToken) => {
   try {
@@ -119,6 +169,8 @@ const validateSubscription = async (subscriptionId, userId, authToken) => {
     );
     const subscription = response.data.data.subscription;
 
+    console.log("Subscription data:", JSON.stringify(subscription, null, 2));
+
     if (!subscription) {
       throw new AppError("Subscription not found", 404);
     }
@@ -131,8 +183,30 @@ const validateSubscription = async (subscriptionId, userId, authToken) => {
       throw new AppError("Subscription is not active", 400);
     }
 
+    if (subscription.paymentStatus !== "paid") {
+      throw new AppError(
+        "Cannot create delivery plan. Subscription payment is pending",
+        400
+      );
+    }
+
+    const currentDate = new Date();
+    const startDate = new Date(subscription.startDate);
+    const endDate = new Date(subscription.endDate);
+
+    if (currentDate < startDate || currentDate > endDate) {
+      throw new AppError(
+        "Subscription is not within valid date range",
+        400
+      );
+    }
+
     return subscription;
   } catch (error) {
+    console.error("Subscription validation error:", error.response?.data || error.message);
+    if (error instanceof AppError) {
+      throw error;
+    }
     throw new AppError(
       `Failed to validate subscription: ${error.response?.data?.message || error.message}`,
       error.response?.status || 500
@@ -142,7 +216,8 @@ const validateSubscription = async (subscriptionId, userId, authToken) => {
 
 // Create delivery plan
 exports.createDeliveryPlan = catchAsync(async (req, res, next) => {
-  const { profileId, subscriptionId, deliveryDay, deliveryNotes } = req.body;
+  const { profileId, subscriptionId, deliveryDay, deliveryNotes, deliveryAddress } =
+    req.body;
   const authToken = req.headers.authorization;
 
   // Get user profile
@@ -152,30 +227,61 @@ exports.createDeliveryPlan = catchAsync(async (req, res, next) => {
   }
 
   // Validate subscription
-  await validateSubscription(subscriptionId, userProfile.userId, authToken);
-
-  // Check if user already has an active delivery plan
-  const activePlan = await DeliveryPlan.findOne({
-    userId: userProfile.userId,
-    status: "ACTIVE",
-  });
-
-  if (activePlan) {
-    return next(new AppError("User already has an active delivery plan", 400));
-  }
-
-  // Get default delivery address using userId
-  const deliveryAddress = await getDefaultAddress(
+  const subscription = await validateSubscription(
+    subscriptionId,
     userProfile.userId,
     authToken
   );
 
-  // Create delivery plan with all required fields
+  let finalDeliveryAddress = deliveryAddress;
+  let finalDeliveryDay = deliveryDay;
+  let schoolDetails = null;
+
+  // If schoolId exists, try to get school address and details
+  if (userProfile.schoolId) {
+    try {
+      schoolDetails = await getSchoolAddress(userProfile.schoolId, authToken);
+      if (schoolDetails.stockManagementAllowed) {
+        // If stock management is enabled, use school's weekDay
+        finalDeliveryDay = schoolDetails.weekDay;
+        finalDeliveryAddress = schoolDetails.address;
+      } else if (!deliveryAddress) {
+        // If stock management is disabled and no address provided, try default address
+        finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+      }
+    } catch (error) {
+      // If error is due to stockManagementAllowed being false
+      if (error.message.includes("stock management")) {
+        if (!deliveryAddress) {
+          // If no address provided in request, try to get default address
+          finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+        }
+      } else {
+        // For other errors, try getting default address
+        finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+      }
+    }
+  } else {
+    // If no schoolId, get default address from user profile
+    if (!deliveryAddress) {
+      finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+    }
+  }
+
+  if (!finalDeliveryAddress) {
+    return next(new AppError("No delivery address available", 400));
+  }
+
+  if (!finalDeliveryDay) {
+    return next(new AppError("Delivery day is required", 400));
+  }
+
   const deliveryPlan = await DeliveryPlan.create({
     userId: userProfile.userId,
     subscriptionId,
-    deliveryDay,
-    deliveryAddress,
+    profileId,
+    deliveryDay: finalDeliveryDay,
+    deliveryAddress: finalDeliveryAddress,
     deliveryNotes,
   });
 

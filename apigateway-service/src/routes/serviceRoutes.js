@@ -46,6 +46,16 @@ const USER_SERVICE_URL =
 const EBOOK_SERVICE_URL =
   process.env.EBOOK_SERVICE_URL || "http://localhost:3000";
 
+// Debug logging
+console.log("Service URLs:", {
+  BOOK_SERVICE_URL,
+  ORDER_SERVICE_URL,
+  SCHOOL_SERVICE_URL,
+  SUBSCRIPTION_SERVICE_URL,
+  USER_SERVICE_URL,
+  EBOOK_SERVICE_URL,
+});
+
 // User Management Service Routes
 const userServiceProxy = createProxyMiddleware({
   target: USER_SERVICE_URL,
@@ -212,10 +222,151 @@ router.use(
   subscriptionServiceProxy
 );
 
-// User Management Protected Routes
+// User Management Routes - Admin Only
 router.use(
-  ["/api/v1/users", "/api/v1/roles", "/api/v1/permissions"],
+  [
+    "/api/v1/users$", // Get All Users
+    "/api/v1/users/export/excel",
+    "/api/v1/users/create-user",
+    "/api/v1/users/and/profiles",
+    "/api/v1/users/status/:status",
+  ],
   verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data"]),
+  userServiceProxy
+);
+
+// User Management Routes - Multiple Roles (ADMIN, SCHOOL_ADMIN, STUDENT)
+router.use(
+  "/api/v1/users",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const path = req.path;
+
+    // Profile picture routes - accessible to all authenticated users
+    if (path.includes("/upload") || path.includes("/delete/profileImage")) {
+      return authorizeRoles(["ADMIN", "SCHOOL_ADMIN", "STUDENT"])(
+        req,
+        res,
+        next
+      );
+    }
+
+    // OTP and token routes - accessible to all authenticated users
+    if (
+      path.includes("/email/verify-otp") ||
+      path.includes("/mobile/send-otp") ||
+      path.includes("/logout") ||
+      path.includes("/refresh-token")
+    ) {
+      return authorizeRoles(["ADMIN", "SCHOOL_ADMIN", "STUDENT"])(
+        req,
+        res,
+        next
+      );
+    }
+
+    // Routes requiring specific permissions
+    const permissions = [];
+    if (method === "GET") permissions.push("Read_Data");
+    if (method === "POST" || method === "PUT") permissions.push("Write_Data");
+    if (method === "DELETE" || method === "PATCH")
+      permissions.push("Delete_Data");
+
+    authorizeRoles(["ADMIN", "SCHOOL_ADMIN", "STUDENT"])(req, res, () => {
+      authorizePermissions(permissions)(req, res, next);
+    });
+  },
+  userServiceProxy
+);
+
+// Role Management Routes - Admin Only
+router.use(
+  "/api/v1/roles",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const permissions = [];
+
+    if (method === "GET") permissions.push("Read_Data");
+    if (method === "POST" || method === "PUT") permissions.push("Write_Data");
+    if (method === "DELETE") permissions.push("Delete_Data");
+
+    authorizeRoles(["ADMIN"])(req, res, () => {
+      authorizePermissions(permissions)(req, res, next);
+    });
+  },
+  userServiceProxy
+);
+
+// User Address Routes
+router.use(
+  [
+    "/api/v1/users/:id/profiles/:profileId/addresses",
+    "/api/v1/users/addresses",
+    "/api/v1/users/pincodes",
+    "/api/v1/users/:userId/addresses",
+  ],
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const permissions = [];
+
+    if (method === "GET") permissions.push("Read_Data");
+    if (method === "POST" || method === "PUT" || method === "PATCH")
+      permissions.push("Write_Data");
+
+    authorizeRoles(["ADMIN", "SCHOOL_ADMIN", "STUDENT"])(req, res, () => {
+      authorizePermissions(permissions)(req, res, next);
+    });
+  },
+  userServiceProxy
+);
+
+// Permission Management Routes - Admin Only
+router.use(
+  "/api/v1/permissions",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const permissions = [];
+
+    if (method === "GET") permissions.push("Read_Data");
+    if (method === "POST") permissions.push("Write_Data");
+
+    authorizeRoles(["ADMIN"])(req, res, () => {
+      authorizePermissions(permissions)(req, res, next);
+    });
+  },
+  userServiceProxy
+);
+
+// User Profile Routes
+router.use(
+  [
+    "api/v1/users/profiles/:id",
+    "/api/v1/users/profiles",
+    "/api/v1/users/:userId/profiles",
+    "/api/v1/users/switch/profiles",
+  ],
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const permissions = [];
+
+    // if (method === "GET") permissions.push("Read_Data");
+    // if (method === "POST" || method === "PUT") permissions.push("Write_Data");
+
+    // authorizeRoles(["ROLE_ADMIN", "ROLE_SCHOOL_ADMIN", "ROLE_STUDENT"])(
+    //   req,
+    //   res,
+    //   () => {
+    //     authorizePermissions(permissions)(req, res, next);
+    //   }
+    // );
+  },
   userServiceProxy
 );
 
@@ -247,14 +398,17 @@ router.use(
         const formData = new FormData();
         // Add the file
         formData.append("imageUrl", req.file.buffer, req.file.originalname);
-        
+
         // Add other fields from the request body
-        Object.keys(req.body).forEach(key => {
+        Object.keys(req.body).forEach((key) => {
           formData.append(key, req.body[key]);
         });
-        
+
         // Set the correct headers
-        proxyReq.setHeader("Content-Type", `multipart/form-data; boundary=${formData._boundary}`);
+        proxyReq.setHeader(
+          "Content-Type",
+          `multipart/form-data; boundary=${formData._boundary}`
+        );
         formData.pipe(proxyReq);
       } else if (req.body && Object.keys(req.body).length > 0) {
         const bodyData = JSON.stringify(req.body);
@@ -265,9 +419,9 @@ router.use(
     },
     onError: (err, req, res) => {
       console.error("Category Proxy Error:", err);
-      res.status(500).json({ 
-        message: "Category service error", 
-        error: err.message 
+      res.status(500).json({
+        message: "Category service error",
+        error: err.message,
       });
     },
     proxyTimeout: 120000,
@@ -316,29 +470,30 @@ router.use(
         }
         if (req.files) {
           Object.keys(req.files).forEach((key) => {
-            formData.append(key, req.files[key][0].buffer, req.files[key][0].originalname);
+            formData.append(
+              key,
+              req.files[key][0].buffer,
+              req.files[key][0].originalname
+            );
           });
         }
-        proxyReq.setHeader("Content-Type", `multipart/form-data; boundary=${formData._boundary}`);
+        proxyReq.setHeader(
+          "Content-Type",
+          `multipart/form-data; boundary=${formData._boundary}`
+        );
+        formData.pipe(proxyReq);
       }
     },
     onError: (err, req, res) => {
-      console.error("Proxy error:", err);
-      res.status(500).json({ message: "Proxy error", error: err.message });
+      console.error("PDF Proxy Error:", err);
+      res.status(500).json({
+        message: "PDF service error",
+        error: err.message,
+      });
     },
-    proxyTimeout: 300000, // 5 minutes
-    timeout: 300000,
+    proxyTimeout: 120000,
+    timeout: 120000,
   })
 );
-
-// Debug logging
-console.log("Service URLs:", {
-  BOOK_SERVICE_URL,
-  ORDER_SERVICE_URL,
-  SCHOOL_SERVICE_URL,
-  SUBSCRIPTION_SERVICE_URL,
-  USER_SERVICE_URL,
-  EBOOK_SERVICE_URL,
-});
 
 module.exports = router;

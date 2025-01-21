@@ -1,13 +1,13 @@
 const Joi = require("joi");
 
 const WEEK_DAYS = [
-  "MONDAY",
-  "TUESDAY",
-  "WEDNESDAY",
-  "THURSDAY",
-  "FRIDAY",
-  "SATURDAY",
-  "SUNDAY",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
 ];
 const SCHOOL_STATUS = ["ACTIVE", "INACTIVE", "SUSPENDED"];
 const BOOK_FREQUENCY = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY"];
