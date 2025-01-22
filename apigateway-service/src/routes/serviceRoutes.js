@@ -158,11 +158,24 @@ const subscriptionServiceProxy = createProxyMiddleware({
   target: SUBSCRIPTION_SERVICE_URL,
   changeOrigin: true,
   pathRewrite: {
-    "^/api/v1/subscriptions": "/api/v1/subscription-service",
+    "^/api/v1/subscription-service": "/api/v1/subscription-service",
+  },
+  onProxyReq: function (proxyReq, req, res) {
+    console.log("Subscription service proxy request path:", proxyReq.path);
+
+    if (req.body) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader("Content-Type", "application/json");
+      proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+    }
   },
   onError: (err, req, res) => {
     console.error("Subscription Service Proxy Error:", err);
-    res.status(500).json({ message: "Subscription service unavailable" });
+    res.status(500).json({
+      message: "Subscription service unavailable",
+      error: err.message,
+    });
   },
 });
 
@@ -746,6 +759,211 @@ router.use(
     });
   },
   bookServiceProxy
+);
+
+// Plan Frequency Type Routes
+router.use(
+  "/api/v1/subscription-service/plan-frequency-types",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+
+    // Create/Delete - ADMIN only with all permissions
+    if (method === "POST" || method === "DELETE") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get/Update - ADMIN with all permissions, others with read
+    if (method === "GET" || method === "PATCH" || method === "PUT") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+  },
+  subscriptionServiceProxy
+);
+
+// Plan Option Type Routes
+router.use(
+  "/api/v1/subscription-service/plan-option-types",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+
+    // Create/Delete/Update - ADMIN only with all permissions
+    if (
+      method === "POST" ||
+      method === "DELETE" ||
+      method === "PUT" ||
+      method === "PATCH"
+    ) {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get - ADMIN with all permissions, others with read
+    if (method === "GET") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+  },
+  subscriptionServiceProxy
+);
+
+// Promotion Code Routes
+router.use(
+  "/api/v1/subscription-service/promotion-codes",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+
+    // Create/Update - ADMIN only with all permissions
+    if (method === "POST" || method === "PATCH" || method === "PUT") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get - ADMIN with all permissions, others with read
+    if (method === "GET") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+  },
+  subscriptionServiceProxy
+);
+
+// Coupon Routes
+router.use(
+  "/api/v1/subscription-service/coupons",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+
+    // Create/Delete - ADMIN only with all permissions
+    if (method === "POST" || method === "DELETE") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get - ADMIN with all permissions, others with read
+    if (method === "GET") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+  },
+  subscriptionServiceProxy
+);
+
+// Subscription Routes
+router.use(
+  "/api/v1/subscription-service/subscriptions",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const path = req.path;
+
+    // Initialize subscription
+    if (path === "/initialize") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "STUDENT"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+
+    // Session details
+    if (path.includes("/session/")) {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+            req,
+            res,
+            next
+          );
+        }
+      );
+    }
+
+    // Get - ADMIN with all permissions, others with read
+    if (method === "GET") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+  },
+  subscriptionServiceProxy
 );
 
 module.exports = router;
