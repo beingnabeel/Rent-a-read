@@ -19,10 +19,22 @@ const cartItemSchema = new mongoose.Schema(
 const cartSchema = new mongoose.Schema(
   {
     userId: {
-      type: mongoose.Schema.ObjectId,
-      required: [true, "Cart must belong to a user"],
+      type: mongoose.Schema.Types.ObjectId,
+      required: [true, "User ID is required"],
     },
-    items: [cartItemSchema],
+    items: [
+      {
+        bookId: {
+          type: String,
+          required: [true, "Book ID is required"],
+        },
+        quantity: {
+          type: Number,
+          required: [true, "Quantity is required"],
+          min: [1, "Quantity must be at least 1"],
+        },
+      },
+    ],
     status: {
       type: String,
       enum: ["ACTIVE", "ordered", "abandoned"],
@@ -30,22 +42,24 @@ const cartSchema = new mongoose.Schema(
     },
     expiryTime: {
       type: Date,
-      default: function () {
-        // Set expiry to 10 minutes from creation in IST
-        const date = new Date();
-        // Add 5 hours and 30 minutes to convert to IST
-        date.setHours(date.getHours() + 5);
-        date.setMinutes(date.getMinutes() + 30);
-        // Add 10 minutes for expiry
-        date.setMinutes(date.getMinutes() + 10);
-        return date;
-      },
+      required: true,
     },
   },
   {
     timestamps: true,
   }
 );
+
+// Set expiry time before saving
+cartSchema.pre("save", function (next) {
+  if (this.isNew) {
+    // Set expiry time to 6 hours from now
+    const expiryTime = new Date();
+    expiryTime.setHours(expiryTime.getHours() + 6);
+    this.expiryTime = expiryTime;
+  }
+  next();
+});
 
 // Add a method to check if cart is expired
 cartSchema.methods.isExpired = function () {

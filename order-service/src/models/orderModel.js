@@ -6,60 +6,69 @@ const axios = require("axios");
 const SUBSCRIPTION_SERVICE_URL =
   process.env.SUBSCRIPTION_SERVICE_URL ||
   "http://localhost:4004/api/v1/subscription-service";
-const BOOKS_SERVICE_URL =
-  process.env.BOOKS_SERVICE_URL || "http://localhost:4001/api/v1/books-service";
 
 const orderSchema = new mongoose.Schema(
   {
     userId: {
-      type: mongoose.Schema.ObjectId,
-      required: [true, "Order must belong to a user"],
+      type: String,
+      required: [true, "User ID is required"],
     },
     subscriptionId: {
-      type: mongoose.Schema.ObjectId,
-      required: [true, "Order must be associated with a subscription"],
+      type: String,
+      required: [true, "Subscription ID is required"],
     },
     cartId: {
-      type: mongoose.Schema.ObjectId,
-      ref: "Cart",
-      required: [true, "Order must be associated with a cart"],
+      type: mongoose.Schema.Types.ObjectId,
+      required: [true, "Cart ID is required"],
     },
     deliveryId: {
-      type: mongoose.Schema.ObjectId,
-      ref: "DeliveryPlan",
-      required: [true, "Order must have a delivery plan"],
+      type: mongoose.Schema.Types.ObjectId,
+      required: [true, "Delivery ID is required"],
     },
+    books: [
+      {
+        bookId: {
+          type: String,
+          required: [true, "Book ID is required"],
+        },
+        quantity: {
+          type: Number,
+          required: [true, "Quantity is required"],
+          min: [1, "Quantity must be at least 1"],
+        },
+      },
+    ],
     totalBooksOrdered: {
       type: Number,
-      required: true,
+      required: [true, "Total books ordered is required"],
     },
     status: {
       type: String,
       enum: [
         "pending",
-        "approved",
-        "cancelled",
+        "confirmed",
         "dispatched",
+        "delivered",
+        "cancelled",
         "returned",
-        "lost",
       ],
       default: "pending",
+    },
+    estimatedDeliveryDate: {
+      type: Date,
+      required: [true, "Estimated delivery date is required"],
+    },
+    dueDate: {
+      type: Date,
+      required: [true, "Due date is required"],
     },
     isCancellationRequested: {
       type: Boolean,
       default: false,
     },
-    isBookReceived: {
+    isBooksReceived: {
       type: Boolean,
       default: false,
-    },
-    estimatedDeliveryDate: {
-      type: Date,
-      required: true,
-    },
-    dueDate: {
-      type: Date,
-      required: true,
     },
   },
   {
@@ -77,7 +86,7 @@ orderSchema.pre(/^find/, async function (next) {
   next();
 });
 
-// Calculate total books ordered and validate stock
+// Calculate total books ordered and validate subscription
 orderSchema.pre("save", async function (next) {
   if (!this.isNew) return next();
 
@@ -94,33 +103,6 @@ orderSchema.pre("save", async function (next) {
       0
     );
 
-    // Validate stock availability through Books Service API
-    for (const item of cart.items) {
-      try {
-        const response = await axios.get(
-          `${BOOKS_SERVICE_URL}/books/${item.bookId}`
-        );
-        const book = response.data.data.book;
-
-        if (!book) {
-          return next(new AppError(`Book not found: ${item.bookId}`, 404));
-        }
-
-        if (item.quantity > book.availableQuantity) {
-          return next(
-            new AppError(`Insufficient stock for book: ${book.title}`, 400)
-          );
-        }
-      } catch (error) {
-        return next(
-          new AppError(
-            `Failed to validate book stock: ${error.message}`,
-            error.response?.status || 500
-          )
-        );
-      }
-    }
-
     // Validate against subscription through Subscription Service API
     try {
       const subscriptionResponse = await axios.get(
@@ -132,12 +114,10 @@ orderSchema.pre("save", async function (next) {
         return next(new AppError("Subscription not found", 404));
       }
 
-      if (
-        this.totalBooksOrdered > subscription.planFrequencyTypeId.booksCount
-      ) {
+      if (this.totalBooksOrdered > subscription.maxBooksAllowed) {
         return next(
           new AppError(
-            `Order exceeds subscription book limit of ${subscription.planFrequencyTypeId.booksCount} books`,
+            `Order exceeds subscription book limit of ${subscription.maxBooksAllowed} books`,
             400
           )
         );

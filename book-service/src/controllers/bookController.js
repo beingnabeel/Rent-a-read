@@ -301,395 +301,60 @@ exports.updateBook = catchAsync(async (req, res, next) => {
   }
 });
 
-// // 1. Export CSV template
-// exports.exportCsvTemplate = (req, res) => {
-//   const csvStringifier = createCsvStringifier({
-//     header: [
-//       { id: "title", title: "Title" },
-//       { id: "description", title: "Description" },
-//       { id: "parentCategoryName", title: "Parent Category Name" },
-//       { id: "subCategoryName", title: "Sub Category Name" },
-//       { id: "paperType", title: "Paper Type" },
-//       { id: "author", title: "Author" },
-//       { id: "publisher", title: "Publisher" },
-//       { id: "isbn", title: "ISBN" },
-//       { id: "languageName", title: "Language Name" },
-//       { id: "series", title: "Series" },
-//       { id: "shelfId", title: "Shelf ID" },
-//       { id: "googleUrl", title: "Google URL" },
-//       { id: "status", title: "Status" },
-//       { id: "minAge", title: "Min Age" },
-//       { id: "maxAge", title: "Max Age" },
-//       { id: "totalQuantity", title: "Total Quantity" },
-//       { id: "availableQuantity", title: "Available Quantity" },
-//     ],
-//   });
+exports.updateBookQuantities = catchAsync(async (req, res, next) => {
+  // Validate the updates
+  const updates = req.body;
+  const validFields = ["availableQuantity", "reserved", "inTransit", "noOfLostBook"];
+  
+  const book = await Book.findById(req.params.id);
+  if (!book) {
+    return next(new AppError("Book not found", 404));
+  }
 
-//   const csvString = csvStringifier.getHeaderString();
-//   res.setHeader(
-//     "Content-disposition",
-//     "attachment; filename=book_template.csv"
-//   );
-//   res.set("Content-Type", "text/csv");
-//   res.status(200).send(csvString);
-// };
+  // Calculate new quantities
+  const newQuantities = {
+    availableQuantity: updates.availableQuantity !== undefined ? updates.availableQuantity : book.availableQuantity,
+    reserved: updates.reserved !== undefined ? book.reserved + updates.reserved : book.reserved,
+    inTransit: updates.inTransit !== undefined ? book.inTransit + updates.inTransit : book.inTransit,
+    noOfLostBook: updates.noOfLostBook !== undefined ? book.noOfLostBook + updates.noOfLostBook : book.noOfLostBook
+  };
 
-// // 2. Import books from CSV
-// const upload = multer({ dest: "uploads/" });
+  // Validate total quantity constraint
+  const totalQuantity = book.totalQuantity;
+  const newTotal = newQuantities.availableQuantity + newQuantities.reserved + newQuantities.inTransit + newQuantities.noOfLostBook;
 
-// exports.importBooksFromCsv = catchAsync(async (req, res, next) => {
-//   upload.single('file')(req, res, async (err) => {
-//     if (err) {
-//       return next(new AppError('Error uploading file', 400));
-//     }
+  if (newTotal > totalQuantity) {
+    return next(
+      new AppError(
+        `Total quantity (${totalQuantity}) would be exceeded. New total would be ${newTotal}`,
+        400
+      )
+    );
+  }
 
-//     if (!req.file) {
-//       return next(new AppError('Please upload a CSV file', 400));
-//     }
+  // Validate available quantity is not negative
+  if (newQuantities.availableQuantity < 0) {
+    return next(
+      new AppError(
+        `Available quantity cannot be negative. New value would be ${newQuantities.availableQuantity}`,
+        400
+      )
+    );
+  }
 
-//     const results = [];
-//     fs.createReadStream(req.file.path)
-//       .pipe(csv())
-//       .on('data', (data) => results.push(data))
-//       .on('end', async () => {
-//         const importedBooks = [];
-//         const errors = [];
+  // Apply updates
+  Object.assign(book, newQuantities);
+  await book.save();
 
-//         for (const row of results) {
-//           try {
-//             // Check if book already exists
-//             const existingBook = await Book.findOne({
-//               $or: [{ title: row.title }, { isbn: row.isbn }]
-//             });
+  res.status(200).json({
+    status: "success",
+    data: {
+      book
+    }
+  });
+});
 
-//             if (existingBook) {
-//               errors.push(`Book with title "${row.title}" or ISBN "${row.isbn}" already exists`);
-//               continue;
-//             }
-
-//             // Handle parent category
-//             let parentCategory = await ParentCategory.findOne({ title: row.parentCategoryName });
-//             if (!parentCategory) {
-//               parentCategory = await ParentCategory.create({ title: row.parentCategoryName });
-//             }
-
-//             // Handle sub category
-//             let subCategory = await Category.findOne({ title: row.subCategoryName });
-//             if (!subCategory) {
-//               subCategory = await Category.create({
-//                 title: row.subCategoryName,
-//                 parentCategoryId: parentCategory._id
-//               });
-//             }
-
-//             // Handle language
-//             let language = await Language.findOne({ name: row.languageName });
-//             if (!language) {
-//               errors.push(`Language "${row.languageName}" not found`);
-//               continue;
-//             }
-
-//             // Create new book
-//             const newBook = await Book.create({
-//               title: row.title,
-//               description: row.description,
-//               categoryIds: [subCategory._id],
-//               paperType: row.paperType,
-//               author: row.author,
-//               publisher: row.publisher,
-//               isbn: row.isbn,
-//               languageId: language._id,
-//               series: row.series,
-//               shelfId: row.shelfId,
-//               googleUrl: row.googleUrl,
-//               status: row.status,
-//               minAge: parseInt(row.minAge),
-//               maxAge: parseInt(row.maxAge),
-//               totalQuantity: parseInt(row.totalQuantity),
-//               availableQuantity: parseInt(row.availableQuantity),
-//               noOfLostBook: parseInt(row.totalQuantity) - parseInt(row.availableQuantity)
-//             });
-
-//             importedBooks.push(newBook);
-//           } catch (error) {
-//             errors.push(`Error importing book "${row.title}": ${error.message}`);
-//           }
-//         }
-
-//         // Delete the uploaded file
-//         fs.unlinkSync(req.file.path);
-
-//         res.status(200).json({
-//           status: 'success',
-//           data: {
-//             importedBooks,
-//             errors
-//           }
-//         });
-//       });
-//   });
-// });
-// exports.importBooksFromCsv = catchAsync(async (req, res, next) => {
-//   upload.single("file")(req, res, async (err) => {
-//     if (err) {
-//       return next(new AppError("Error uploading file", 400));
-//     }
-
-//     if (!req.file) {
-//       return next(new AppError("Please upload a CSV file", 400));
-//     }
-
-//     const results = [];
-//     fs.createReadStream(req.file.path)
-//       .pipe(csv())
-//       .on("data", (data) => results.push(data))
-//       .on("end", async () => {
-//         const importedBooks = [];
-//         const errors = [];
-
-//         for (const row of results) {
-//           try {
-//             // Check if book already exists
-//             const existingBook = await Book.findOne({
-//               $or: [{ title: row.title }, { isbn: row.isbn }],
-//             });
-
-//             if (existingBook) {
-//               errors.push(
-//                 `Book with title "${row.title}" or ISBN "${row.isbn}" already exists`
-//               );
-//               continue;
-//             }
-
-//             // Handle parent category
-//             let parentCategory = await ParentCategory.findOne({
-//               title: row.parentCategoryName,
-//             });
-//             if (!parentCategory) {
-//               parentCategory = await ParentCategory.create({
-//                 title: row.parentCategoryName,
-//                 imageUrl: "default-parent-category-image.jpg", // Add a default image URL
-//               });
-//             }
-
-//             // Handle sub-category
-//             let subCategory = await Category.findOne({
-//               title: row.subCategoryName,
-//               parentCategoryId: parentCategory._id,
-//             });
-//             if (!subCategory) {
-//               subCategory = await Category.create({
-//                 title: row.subCategoryName,
-//                 parentCategoryId: parentCategory._id,
-//               });
-//             }
-
-//             // Handle language
-//             let language = await Language.findOne({ name: row.languageName });
-//             if (!language) {
-//               language = await Language.create({
-//                 name: row.languageName,
-//                 code: row.languageName.slice(0, 2).toLowerCase(), // Simple 2-letter code
-//                 nativeName: row.languageName,
-//               });
-//             }
-
-//             // Create book
-//             const newBook = await Book.create({
-//               title: row.title,
-//               description: row.description,
-//               categoryIds: [subCategory._id],
-//               paperType: row.paperType,
-//               author: row.author,
-//               publisher: row.publisher,
-//               isbn: row.isbn,
-//               languageId: language._id,
-//               series: row.series,
-//               shelfId: row.shelfId,
-//               googleUrl: row.googleUrl,
-//               status: row.status,
-//               minAge: parseInt(row.minAge),
-//               maxAge: parseInt(row.maxAge),
-//               totalQuantity: parseInt(row.totalQuantity),
-//               availableQuantity: parseInt(row.availableQuantity) || parseInt(row.totalQuantity),
-//             });
-
-//             importedBooks.push(newBook);
-//           } catch (error) {
-//             errors.push(
-//               `Error importing book "${row.title}": ${error.message}`
-//             );
-//           }
-//         }
-
-//         // Delete the uploaded file
-//         fs.unlinkSync(req.file.path);
-
-//         res.status(200).json({
-//           status: "success",
-//           data: {
-//             importedBooks,
-//             errors,
-//           },
-//         });
-//       });
-//   });
-// });
-
-// exports.importBooksFromCsv = catchAsync(async (req, res, next) => {
-//   upload.single("file")(req, res, async (err) => {
-//     if (err) {
-//       return next(new AppError("Error uploading file", 400));
-//     }
-
-//     if (!req.file) {
-//       return next(new AppError("Please upload a CSV file", 400));
-//     }
-
-//     const results = [];
-//     fs.createReadStream(req.file.path)
-//       .pipe(csv())
-//       .on("data", (data) => results.push(data))
-//       .on("end", async () => {
-//         const importedBooks = [];
-//         const errors = [];
-
-//         for (const row of results) {
-//           try {
-//             // Validate required fields
-//             if (
-//               !row.Title ||
-//               !row["Parent Category Name"] ||
-//               !row["Sub Category Name"]
-//             ) {
-//               throw new Error(
-//                 "Title, Parent Category Name, and Sub Category Name are required"
-//               );
-//             }
-
-//             // Check if book already exists
-//             const existingBook = await Book.findOne({
-//               $or: [{ title: row.Title }, { isbn: row.ISBN }],
-//             });
-
-//             if (existingBook) {
-//               errors.push(
-//                 `Book with title "${row.Title}" or ISBN "${row.ISBN}" already exists`
-//               );
-//               continue;
-//             }
-
-//             // Handle parent category
-//             let parentCategory = await ParentCategory.findOne({
-//               title: row["Parent Category Name"],
-//             });
-//             if (!parentCategory) {
-//               parentCategory = await ParentCategory.create({
-//                 title: row["Parent Category Name"],
-//                 imageUrl: "default-parent-category-image.jpg", // Add a default image URL
-//               });
-//             }
-
-//             // Handle sub-category
-//             let subCategory = await Category.findOne({
-//               title: row["Sub Category Name"],
-//               parentCategoryId: parentCategory._id,
-//             });
-//             if (!subCategory) {
-//               subCategory = await Category.create({
-//                 title: row["Sub Category Name"],
-//                 parentCategoryId: parentCategory._id,
-//               });
-//             }
-
-//             // Handle language
-//             let language = await Language.findOne({
-//               name: row["Language Name"],
-//             });
-//             if (!language) {
-//               language = await Language.create({
-//                 name: row["Language Name"],
-//                 code: row["Language Name"].slice(0, 2).toLowerCase(), // Simple 2-letter code
-//                 nativeName: row["Language Name"],
-//               });
-//             }
-
-//             // Create book
-//             const newBook = await Book.create({
-//               title: row.Title,
-//               description: row.Description,
-//               categoryIds: [subCategory._id],
-//               paperType: row["Paper Type"],
-//               author: row.Author,
-//               publisher: row.Publisher,
-//               isbn: row.ISBN,
-//               languageId: language._id,
-//               series: row.Series,
-//               shelfId: row["Shelf ID"],
-//               googleUrl: row["Google URL"],
-//               status: row.Status || "ACTIVE", // Add a default status
-//               minAge: parseInt(row["Min Age"]),
-//               maxAge: parseInt(row["Max Age"]),
-//               totalQuantity: parseInt(row["Total Quantity"]),
-//               availableQuantity:
-//                 parseInt(row["Available Quantity"]) ||
-//                 parseInt(row["Total Quantity"]),
-//             });
-
-//             importedBooks.push(newBook);
-//           } catch (error) {
-//             errors.push(
-//               `Error importing book "${row.Title || "Unknown"}": ${error.message}`
-//             );
-//           }
-//         }
-
-//         // Delete the uploaded file
-//         fs.unlinkSync(req.file.path);
-
-//         res.status(200).json({
-//           status: "success",
-//           data: {
-//             importedBooks,
-//             errors,
-//           },
-//         });
-//       });
-//   });
-// });
-
-// 1. Export CSV Template
-// exports.exportCsvTemplate = (req, res) => {
-//   const csvStringifier = createCsvStringifier({
-//     header: [
-//       { id: "Title", title: "Title" },
-//       { id: "Description", title: "Description" },
-//       { id: "Parent Category Name", title: "Parent Category Name" },
-//       { id: "Sub Category Name", title: "Sub Category Name" },
-//       { id: "Paper Type", title: "Paper Type" },
-//       { id: "Author", title: "Author" },
-//       { id: "Publisher", title: "Publisher" },
-//       { id: "ISBN", title: "ISBN" },
-//       { id: "Language Name", title: "Language Name" },
-//       { id: "Series", title: "Series" },
-//       { id: "Shelf ID", title: "Shelf ID" },
-//       { id: "Google URL", title: "Google URL" },
-//       { id: "Status", title: "Status" },
-//       { id: "Min Age", title: "Min Age" },
-//       { id: "Max Age", title: "Max Age" },
-//       { id: "Total Quantity", title: "Total Quantity" },
-//       { id: "Available Quantity", title: "Available Quantity" },
-//     ],
-//   });
-
-//   const csvString = csvStringifier.getHeaderString();
-//   res.setHeader(
-//     "Content-disposition",
-//     "attachment; filename=book_template.csv"
-//   );
-//   res.set("Content-Type", "text/csv");
-//   res.status(200).send(csvString);
-// };
+// 1. Export CSV template
 exports.exportCsvTemplate = catchAsync(async (req, res, next) => {
   const csvStringifier = createCsvStringifier({
     header: [
@@ -723,191 +388,4 @@ exports.exportCsvTemplate = catchAsync(async (req, res, next) => {
   );
   res.set("Content-Type", "text/csv");
   res.status(200).send(csvString);
-});
-// 2. Import books from CSV
-// const upload = multer({ dest: "uploads/" });
-
-// exports.importBooksFromCsv = catchAsync(async (req, res, next) => {
-//   upload.single("file")(req, res, async (err) => {
-//     if (err) {
-//       return next(new AppError("Error uploading file", 400));
-//     }
-
-//     if (!req.file) {
-//       return next(new AppError("Please upload a CSV file", 400));
-//     }
-
-//     const results = [];
-//     fs.createReadStream(req.file.path)
-//       .pipe(csv())
-//       .on("data", (data) => results.push(data))
-//       .on("end", async () => {
-//         const importedBooks = [];
-//         const errors = [];
-
-//         for (const row of results) {
-//           try {
-//             // Validate required fields
-//             if (
-//               !row.Title ||
-//               !row["Parent Category Name"] ||
-//               !row["Sub Category Name"]
-//             ) {
-//               throw new Error(
-//                 "Title, Parent Category Name, and Sub Category Name are required"
-//               );
-//             }
-
-//             // Check if book already exists
-//             const existingBook = await Book.findOne({
-//               $or: [{ title: row.Title }, { isbn: row.ISBN }],
-//             });
-
-//             if (existingBook) {
-//               errors.push(
-//                 `Book with title "${row.Title}" or ISBN "${row.ISBN}" already exists`
-//               );
-//               continue;
-//             }
-
-//             // Handle parent category
-//             let parentCategory = await ParentCategory.findOne({
-//               title: row["Parent Category Name"],
-//             });
-//             if (!parentCategory) {
-//               parentCategory = await ParentCategory.create({
-//                 title: row["Parent Category Name"],
-//                 imageUrl: "default-parent-category-image.jpg", // Add a default image URL
-//               });
-//             }
-//             // Handle sub-category
-//             let subCategory = await Category.findOne({
-//               title: row["Sub Category Name"],
-//               parentCategoryId: parentCategory._id,
-//             });
-//             if (!subCategory) {
-//               subCategory = await Category.create({
-//                 title: row["Sub Category Name"],
-//                 parentCategoryId: parentCategory._id,
-//               });
-//             }
-
-//             // Handle language
-//             let language = await Language.findOne({
-//               name: row["Language Name"],
-//             });
-//             if (!language) {
-//               language = await Language.create({
-//                 name: row["Language Name"],
-//                 code: row["Language Name"].slice(0, 2).toLowerCase(), // Simple 2-letter code
-//                 nativeName: row["Language Name"],
-//               });
-//             }
-
-//             // Create book
-//             const newBook = await Book.create({
-//               title: row.Title,
-//               description: row.Description || "No description", // Add a fallback for optional description
-//               categoryIds: [subCategory._id],
-//               paperType: row["Paper Type"],
-//               author: row.Author,
-//               publisher: row.Publisher,
-//               isbn: row.ISBN,
-//               languageId: language._id,
-//               series: row.Series,
-//               shelfId: row["Shelf ID"],
-//               googleUrl: row["Google URL"],
-//               status: row.Status || "ACTIVE", // Add a default status
-//               minAge: parseInt(row["Min Age"]),
-//               maxAge: parseInt(row["Max Age"]),
-//               totalQuantity: parseInt(row["Total Quantity"]),
-//               availableQuantity:
-//                 parseInt(row["Available Quantity"]) ||
-//                 parseInt(row["Total Quantity"]),
-//             });
-
-//             importedBooks.push(newBook);
-//           } catch (error) {
-//             errors.push(
-//               `Error importing book "${row.Title || "Unknown"}": ${error.message}`
-//             );
-//           }
-//         }
-
-//         // Delete the uploaded file
-//         fs.unlinkSync(req.file.path);
-
-//         res.status(200).json({
-//           status: "success",
-//           data: {
-//             importedBooks,
-//             errors,
-//           },
-//         });
-//       });
-//   });
-// });
-
-exports.updateBookQuantities = catchAsync(async (req, res, next) => {
-  // Validate the updates
-  const updates = req.body;
-  const validFields = [
-    "availableQuantity",
-    "reserved",
-    "inTransit",
-    "noOfLostBook",
-  ];
-
-  // Check if all update fields are valid
-  const invalidFields = Object.keys(updates).filter(
-    (field) => !validFields.includes(field)
-  );
-  if (invalidFields.length > 0) {
-    return next(
-      new AppError(`Invalid fields: ${invalidFields.join(", ")}`, 400)
-    );
-  }
-
-  // Find the book and update quantities
-  const book = await Book.findById(req.params.id);
-  if (!book) {
-    return next(new AppError("No book found with that ID", 404));
-  }
-
-  // Calculate new quantities
-  const newQuantities = {
-    availableQuantity:
-      book.availableQuantity + (updates.availableQuantity || 0),
-    reserved: book.reserved + (updates.reserved || 0),
-    inTransit: book.inTransit + (updates.inTransit || 0),
-    noOfLostBook: book.noOfLostBook + (updates.noOfLostBook || 0),
-  };
-
-  // Validate total quantity constraint
-  const totalQuantity = book.totalQuantity;
-  const newTotal =
-    newQuantities.availableQuantity +
-    newQuantities.reserved +
-    newQuantities.inTransit +
-    newQuantities.noOfLostBook;
-
-  if (newTotal > totalQuantity) {
-    return next(
-      new AppError(
-        `Total quantity (${totalQuantity}) would be exceeded. New total would be ${newTotal}`,
-        400
-      )
-    );
-  }
-
-  // Apply updates
-  Object.assign(book, newQuantities);
-  await book.save();
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      book,
-    },
-  });
 });

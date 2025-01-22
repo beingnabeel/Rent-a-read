@@ -5,7 +5,7 @@ const axios = require("axios");
 
 // Configure base URLs for microservices
 const BOOKS_SERVICE_URL =
-  process.env.BOOKS_SERVICE_URL || "http://localhost:4001/api/v1/books-service";
+  process.env.BOOKS_SERVICE_URL || "http://localhost:4001";
 const SUBSCRIPTION_SERVICE_URL =
   process.env.SUBSCRIPTION_SERVICE_URL ||
   "http://localhost:4004/api/v1/subscription-service";
@@ -31,9 +31,20 @@ const checkSubscriptionStatus = async (userId) => {
 // Helper function to check book availability
 const checkBookAvailability = async (bookId) => {
   try {
-    const response = await axios.get(`${BOOKS_SERVICE_URL}/books/${bookId}`);
+    console.log("Checking book availability for bookId:", bookId);
+    console.log(
+      "Book service URL:",
+      `${BOOKS_SERVICE_URL}/api/v1/books-service/books/${bookId}`
+    );
+
+    const response = await axios.get(
+      `${BOOKS_SERVICE_URL}/api/v1/books-service/books/${bookId}`
+    );
+
+    console.log("Book service response:", response.data);
     return response.data.data.book;
   } catch (error) {
+    console.error("Error checking book availability:", error.response || error);
     throw new AppError(
       `Failed to fetch book details: ${error.response?.data?.message || error.message}`,
       error.response?.status || 500
@@ -54,142 +65,82 @@ const checkCartExpiry = async (cart) => {
 };
 
 exports.createCart = catchAsync(async (req, res, next) => {
-  console.log("Request body:", req.body);
+  const { userId, items } = req.body;
+  const authToken = req.headers.authorization;
 
-  // Validate request body
-  if (
-    !req.body.items ||
-    !Array.isArray(req.body.items) ||
-    req.body.items.length === 0
-  ) {
-    return next(
-      new AppError("Please provide items array with at least one item", 400)
-    );
+  // Validate items
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return next(new AppError("Cart must have at least one item", 400));
   }
 
-  // Check subscription status first
-  const subscription = await checkSubscriptionStatus(req.body.userId);
-
-  // Check for both possible payment status values
-  if (
-    !subscription ||
-    !["succeeded", "paid"].includes(subscription.paymentStatus)
-  ) {
-    return next(
-      new AppError(
-        "Active paid subscription required to add items to cart",
-        403
-      )
-    );
+  // Check active subscription
+  try {
+    await checkSubscriptionStatus(userId);
+  } catch (error) {
+    return next(error);
   }
 
-  // Check if total books requested exceed subscription limit
-  const totalBooksRequested = req.body.items.reduce(
-    (sum, item) => sum + item.quantity,
-    0
-  );
-  if (totalBooksRequested > subscription.maxBooksAllowed) {
+  // Check for existing active cart
+  const existingCart = await Cart.findOne({
+    userId,
+    status: "ACTIVE",
+  });
+
+  if (existingCart) {
     return next(
       new AppError(
-        `Cart items exceed subscription limit of ${subscription.maxBooksAllowed} books`,
+        "User already has an active cart. Please use that or abandon it first.",
         400
       )
     );
   }
 
-  // Validate each item and check availability
-  for (const item of req.body.items) {
-    if (
-      !item.bookId ||
-      !item.quantity ||
-      !Number.isInteger(item.quantity) ||
-      item.quantity <= 0
-    ) {
-      return next(
-        new AppError("Each item must have a valid bookId and quantity", 400)
-      );
-    }
-
-    const book = await checkBookAvailability(item.bookId);
-
-    if (!book) {
-      return next(new AppError(`Book with ID ${item.bookId} not found`, 404));
-    }
-
-    if (book.availableQuantity < item.quantity) {
-      return next(
-        new AppError(
-          `Only ${book.availableQuantity} copies available for book "${book.title}"`,
-          400
-        )
-      );
-    }
-  }
-
-  // Check for existing active cart
-  const existingCart = await Cart.findOne({
-    userId: req.body.userId,
-    status: "ACTIVE",
-  });
-
-  if (existingCart) {
-    // Check if existing cart is expired
-    if (existingCart.isExpired()) {
-      existingCart.status = "abandoned";
-      await existingCart.save();
-    } else {
-      return next(new AppError("User already has an active cart", 400));
-    }
-  }
-
-  let cart;
-
-  if (existingCart) {
-    // Calculate total books after adding new items
-    const totalExistingBooks = existingCart.items.reduce(
-      (sum, item) => sum + item.quantity,
-      0
-    );
-    const totalAfterAdd = totalExistingBooks + totalBooksRequested;
-
-    if (totalAfterAdd > subscription.maxBooksAllowed) {
-      return next(
-        new AppError(
-          `Adding these items would exceed subscription limit of ${subscription.maxBooksAllowed} books`,
-          400
-        )
-      );
-    }
-
-    // Add items to existing cart
-    const newItems = req.body.items || [];
-    newItems.forEach((newItem) => {
-      const existingItemIndex = existingCart.items.findIndex(
-        (item) => item.bookId.toString() === newItem.bookId.toString()
+  // Validate book availability
+  for (const item of items) {
+    try {
+      const response = await axios.get(
+        `${BOOKS_SERVICE_URL}/api/v1/books-service/books/${item.bookId}`,
+        {
+          headers: {
+            Authorization: authToken,
+          },
+        }
       );
 
-      if (existingItemIndex > -1) {
-        existingCart.items[existingItemIndex].quantity += newItem.quantity;
-      } else {
-        existingCart.items.push({
-          bookId: newItem.bookId,
-          quantity: newItem.quantity,
-        });
+      const book = response.data.data.book;
+      if (!book) {
+        return next(new AppError(`Book not found: ${item.bookId}`, 404));
       }
-    });
 
-    cart = await existingCart.save();
-  } else {
-    // Create new cart
-    cart = await Cart.create({
-      userId: req.body.userId,
-      items: req.body.items.map((item) => ({
-        bookId: item.bookId,
-        quantity: item.quantity,
-      })),
-      status: "ACTIVE",
-    });
+      if (book.availableQuantity < item.quantity) {
+        return next(
+          new AppError(
+            `Insufficient stock for book ${book.title}. Available: ${book.availableQuantity}, Requested: ${item.quantity}`,
+            400
+          )
+        );
+      }
+    } catch (error) {
+      return next(
+        new AppError(
+          `Failed to validate book: ${error.response?.data?.message || error.message}`,
+          error.response?.status || 500
+        )
+      );
+    }
   }
+
+  // Set expiry time to 6 hours from now
+  const expiryTime = new Date();
+  expiryTime.setHours(expiryTime.getHours() + 6);
+
+  // Create cart
+  const cart = await Cart.create({
+    userId,
+    items,
+    status: "ACTIVE",
+    expiryTime,
+  });
 
   res.status(201).json({
     status: "success",
@@ -203,7 +154,7 @@ exports.getCart = catchAsync(async (req, res, next) => {
   const cart = await Cart.findById(req.params.id);
 
   if (!cart) {
-    return next(new AppError("No cart found with that ID", 404));
+    return next(new AppError("Cart not found", 404));
   }
 
   res.status(200).json({
@@ -215,148 +166,100 @@ exports.getCart = catchAsync(async (req, res, next) => {
 });
 
 exports.updateCart = catchAsync(async (req, res, next) => {
-  // Validate request body
-  if (req.body.items) {
-    if (!Array.isArray(req.body.items) || req.body.items.length === 0) {
-      return next(new AppError("Items should be a non-empty array", 400));
-    }
+  const { items } = req.body;
+  const authToken = req.headers.authorization;
 
-    // Validate each item
-    for (const item of req.body.items) {
-      if (
-        !item.bookId ||
-        !item.quantity ||
-        !Number.isInteger(item.quantity) ||
-        item.quantity <= 0
-      ) {
-        return next(
-          new AppError("Each item must have a valid bookId and quantity", 400)
-        );
-      }
-    }
-  }
-
-  // Find the cart
   const cart = await Cart.findById(req.params.id);
   if (!cart) {
-    return next(new AppError("No cart found with that ID", 404));
+    return next(new AppError("Cart not found", 404));
   }
-
-  // Check cart expiry
-  await checkCartExpiry(cart);
 
   if (cart.status !== "ACTIVE") {
-    return next(new AppError("Cannot update an inactive cart", 400));
+    return next(new AppError("Cannot update a non-active cart", 400));
   }
 
-  // Check subscription status
-  const subscription = await checkSubscriptionStatus(cart.userId);
-  if (
-    !subscription ||
-    !["succeeded", "paid"].includes(subscription.paymentStatus)
-  ) {
-    return next(
-      new AppError("Active paid subscription required to update cart", 403)
-    );
+  // Check active subscription
+  try {
+    await checkSubscriptionStatus(cart.userId);
+  } catch (error) {
+    return next(error);
   }
 
-  if (req.body.items) {
-    // Calculate total books requested
-    const totalBooksRequested = req.body.items.reduce(
-      (sum, item) => sum + item.quantity,
-      0
-    );
-
-    // Check subscription book limit
-    if (totalBooksRequested > subscription.maxBooksAllowed) {
-      return next(
-        new AppError(
-          `Cart items exceed subscription limit of ${subscription.maxBooksAllowed} books`,
-          400
-        )
+  // Validate book availability for new items
+  for (const item of items) {
+    try {
+      const response = await axios.get(
+        `${BOOKS_SERVICE_URL}/api/v1/books-service/books/${item.bookId}`,
+        {
+          headers: {
+            Authorization: authToken,
+          },
+        }
       );
-    }
 
-    // Check book availability for each item
-    for (const item of req.body.items) {
-      const book = await checkBookAvailability(item.bookId);
-
+      const book = response.data.data.book;
       if (!book) {
-        return next(new AppError(`Book with ID ${item.bookId} not found`, 404));
+        return next(new AppError(`Book not found: ${item.bookId}`, 404));
       }
 
-      // Check if requested quantity is available
       if (book.availableQuantity < item.quantity) {
         return next(
           new AppError(
-            `Only ${book.availableQuantity} copies available for book "${book.title}"`,
+            `Insufficient stock for book ${book.title}. Available: ${book.availableQuantity}, Requested: ${item.quantity}`,
             400
           )
         );
       }
-
-      // If this is an existing item, we need to check if the quantity increase is possible
-      const existingItem = cart.items.find(
-        (cartItem) => cartItem.bookId.toString() === item.bookId.toString()
+    } catch (error) {
+      return next(
+        new AppError(
+          `Failed to validate book: ${error.response?.data?.message || error.message}`,
+          error.response?.status || 500
+        )
       );
-
-      if (existingItem && item.quantity > existingItem.quantity) {
-        const additionalQuantity = item.quantity - existingItem.quantity;
-        if (additionalQuantity > book.availableQuantity) {
-          return next(
-            new AppError(
-              `Cannot increase quantity by ${additionalQuantity}. Only ${book.availableQuantity} additional copies available for book "${book.title}"`,
-              400
-            )
-          );
-        }
-      }
     }
-
-    // If all checks pass, update the cart items
-    cart.items = req.body.items;
   }
 
-  // Don't allow updating userId
-  if (req.body.userId) delete req.body.userId;
+  // Reset expiry time when cart is updated
+  const expiryTime = new Date();
+  expiryTime.setHours(expiryTime.getHours() + 6);
 
-  // Update other fields if needed (except userId and status)
-  if (req.body.status) {
-    cart.status = req.body.status;
-  }
-
-  const updatedCart = await cart.save();
+  cart.items = items;
+  cart.expiryTime = expiryTime;
+  await cart.save();
 
   res.status(200).json({
     status: "success",
     data: {
-      cart: updatedCart,
+      cart,
     },
   });
 });
 
-exports.deleteCart = catchAsync(async (req, res, next) => {
-  const cart = await Cart.findByIdAndUpdate(
-    req.params.id,
-    { status: "abandoned" },
-    {
-      new: true,
-      runValidators: true,
-    }
-  );
-
+exports.abandonCart = catchAsync(async (req, res, next) => {
+  const cart = await Cart.findById(req.params.id);
   if (!cart) {
-    return next(new AppError("No cart found with that ID", 404));
+    return next(new AppError("Cart not found", 404));
   }
 
-  res.status(204).json({
+  if (cart.status !== "ACTIVE") {
+    return next(new AppError("Cannot abandon a non-active cart", 400));
+  }
+
+  cart.status = "abandoned";
+  await cart.save();
+
+  res.status(200).json({
     status: "success",
-    data: null,
+    data: {
+      cart,
+    },
   });
 });
 
 // Add this method to get cart with book details
 exports.getCartWithDetails = catchAsync(async (req, res, next) => {
+  console.log("Getting cart details for ID:", req.params.id);
   const cart = await Cart.findById(req.params.id);
   if (!cart) {
     return next(new AppError("No cart found with that ID", 404));
@@ -365,6 +268,7 @@ exports.getCartWithDetails = catchAsync(async (req, res, next) => {
   // Fetch book details for each item
   const itemsWithDetails = await Promise.all(
     cart.items.map(async (item) => {
+      console.log("Fetching details for book:", item.bookId);
       const book = await checkBookAvailability(item.bookId);
       return {
         ...item.toObject(),
@@ -393,6 +297,13 @@ exports.getActiveCart = catchAsync(async (req, res, next) => {
 
   if (!cart) {
     return next(new AppError("No active cart found", 404));
+  }
+
+  // Check active subscription
+  try {
+    await checkSubscriptionStatus(cart.userId);
+  } catch (error) {
+    return next(error);
   }
 
   // Check cart expiry

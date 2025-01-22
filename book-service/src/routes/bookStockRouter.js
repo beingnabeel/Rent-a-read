@@ -123,4 +123,7 @@ router
 // Add this route with your existing routes
 router.route("/schools").get(bookStockController.getAllSchoolBooks);
 
+// Route for updating reserved quantity
+router.patch("/books/:id/reserved", bookStockController.updateReservedQuantity);
+
 module.exports = router;

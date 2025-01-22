@@ -639,3 +639,54 @@ exports.getAllSchoolBooks = catchAsync(async (req, res, next) => {
     );
   }
 });
+
+exports.updateReservedQuantity = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { reserved } = req.body;
+
+  const book = await Book.findById(id);
+  if (!book) {
+    return next(new AppError("Book not found", 404));
+  }
+
+  const bookQuantity = await BookQuantity.findByBookId(id);
+  if (!bookQuantity) {
+    return next(new AppError("Book quantity record not found", 404));
+  }
+
+  // Validate reserved quantity
+  if (reserved < 0) {
+    return next(new AppError("Reserved quantity cannot be negative", 400));
+  }
+
+  if (reserved + book.noOfLostBook > book.totalQuantity) {
+    return next(
+      new AppError(
+        "Reserved quantity plus lost books cannot exceed total quantity",
+        400
+      )
+    );
+  }
+
+  try {
+    // Update book
+    book.reserved = reserved;
+    await book.save();
+
+    // Update book quantity
+    bookQuantity.reserved = reserved;
+    await bookQuantity.save();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        book,
+        bookQuantity,
+      },
+    });
+  } catch (error) {
+    return next(
+      new AppError(`Failed to update reserved quantity: ${error.message}`, 500)
+    );
+  }
+});
