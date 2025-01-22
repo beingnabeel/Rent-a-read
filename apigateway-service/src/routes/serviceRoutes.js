@@ -85,11 +85,32 @@ const bookServiceProxy = createProxyMiddleware({
   target: BOOK_SERVICE_URL,
   changeOrigin: true,
   pathRewrite: {
-    "^/api/v1/books": "/api/v1/books-service",
+    "^/api/v1/books-service": "/api/v1/books-service",
+  },
+  onProxyReq: function (proxyReq, req, res) {
+    console.log("Book service proxy request path:", proxyReq.path);
+
+    // Handle multipart/form-data
+    if (req.is("multipart/form-data")) {
+      proxyReq.setHeader("content-type", req.headers["content-type"]);
+      proxyReq.setHeader("content-length", req.headers["content-length"]);
+      return;
+    }
+
+    // Handle JSON data
+    if (req.body && Object.keys(req.body).length > 0) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader("Content-Type", "application/json");
+      proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+    }
   },
   onError: (err, req, res) => {
     console.error("Book Service Proxy Error:", err);
-    res.status(500).json({ message: "Book service unavailable" });
+    res.status(500).json({
+      message: "Book service unavailable",
+      error: err.message,
+    });
   },
 });
 
@@ -494,6 +515,237 @@ router.use(
     proxyTimeout: 120000,
     timeout: 120000,
   })
+);
+
+// Book Service Routes with Role-Based Access Control
+router.use(
+  "/api/v1/books-service/books",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const path = req.path;
+
+    // Create book - ADMIN only with all permissions
+    if (method === "POST") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get all books or get book by ID
+    if (method === "GET") {
+      if (path === "/latest") {
+        // Latest books - ADMIN, STUDENT, SCHOOL_ADMIN with read permission
+        return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+          req,
+          res,
+          () => {
+            authorizePermissions(["Read_Data"])(req, res, next);
+          }
+        );
+      }
+      // All books or single book - ADMIN with read/write, others with read
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+
+    // Update book - ADMIN only with read/write
+    if (method === "PATCH" || method === "PUT") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data"])(req, res, next);
+      });
+    }
+  },
+  bookServiceProxy
+);
+
+// Category Routes
+router.use(
+  "/api/v1/books-service/categories",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const path = req.path;
+
+    // Create category - ADMIN only with all permissions
+    if (method === "POST") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get categories (all or by ID) - ADMIN with read/write, others with read
+    if (method === "GET") {
+      if (path.includes("/parent-categories/")) {
+        // Categories by parent - same permissions as general get
+        return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+          req,
+          res,
+          () => {
+            const permissions =
+              req.user.role === "ADMIN"
+                ? ["Read_Data", "Write_Data", "Delete_Data"]
+                : ["Read_Data"];
+            authorizePermissions(permissions)(req, res, next);
+          }
+        );
+      }
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+
+    // Update category - ADMIN only with read/write/delete
+    if (method === "PATCH" || method === "PUT") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+  },
+  bookServiceProxy
+);
+
+// Parent Category Routes
+router.use(
+  "/api/v1/books-service/parent-categories",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+    const path = req.path;
+
+    // Create parent category - ADMIN only with all permissions
+    if (method === "POST") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get parent categories - ADMIN with all permissions, others with read
+    if (method === "GET") {
+      if (path === "/ACTIVE" || path === "/categories") {
+        return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+          req,
+          res,
+          () => {
+            const permissions =
+              req.user.role === "ADMIN"
+                ? ["Read_Data", "Write_Data", "Delete_Data"]
+                : ["Read_Data"];
+            authorizePermissions(permissions)(req, res, next);
+          }
+        );
+      }
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+
+    // Update parent category - ADMIN only with all permissions
+    if (method === "PATCH" || method === "PUT") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+  },
+  bookServiceProxy
+);
+
+// Language Routes
+router.use(
+  "/api/v1/books-service/languages",
+  verifyToken,
+  (req, res, next) => {
+    const method = req.method;
+
+    // Create/Update language - ADMIN only with all permissions
+    if (method === "POST" || method === "PATCH" || method === "PUT") {
+      return authorizeRoles(["ADMIN"])(req, res, () => {
+        authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+          req,
+          res,
+          next
+        );
+      });
+    }
+
+    // Get languages - ADMIN with all permissions, others with read
+    if (method === "GET") {
+      return authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"])(
+        req,
+        res,
+        () => {
+          const permissions =
+            req.user.role === "ADMIN"
+              ? ["Read_Data", "Write_Data", "Delete_Data"]
+              : ["Read_Data"];
+          authorizePermissions(permissions)(req, res, next);
+        }
+      );
+    }
+  },
+  bookServiceProxy
+);
+
+// Book Stock Routes
+router.use(
+  "/api/v1/books-service/book-stocks",
+  verifyToken,
+  (req, res, next) => {
+    // All book stock operations - ADMIN only with all permissions
+    authorizeRoles(["ADMIN"])(req, res, () => {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    });
+  },
+  bookServiceProxy
 );
 
 module.exports = router;
