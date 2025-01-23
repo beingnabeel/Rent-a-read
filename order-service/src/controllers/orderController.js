@@ -8,8 +8,9 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 
 // Configure base URLs for microservices
-const BOOKS_SERVICE_URL =
-  process.env.BOOKS_SERVICE_URL || "http://localhost:4001";
+const BOOK_SERVICE_URL =
+  process.env.BOOK_SERVICE_URL ||
+  "http://localhost:4001/api/v1/books-service";
 const SUBSCRIPTION_SERVICE_URL =
   process.env.SUBSCRIPTION_SERVICE_URL ||
   "http://localhost:4004/api/v1/subscription-service";
@@ -55,7 +56,7 @@ const validateSubscription = async (subscriptionId, userId, authToken) => {
       throw new AppError("Subscription payment is not complete", 400);
     }
 
-    return subscription;
+    return response.data;
   } catch (error) {
     console.error("Error validating subscription:", error.response || error);
     throw new AppError(
@@ -76,7 +77,7 @@ const updateBookQuantities = async (books, authToken) => {
 
         // First, check if book exists and get current stock
         const bookResponse = await axios.get(
-          `${BOOKS_SERVICE_URL}/api/v1/books-service/books/${book.bookId}`,
+          `${BOOK_SERVICE_URL}/books/${book.bookId}`,
           {
             headers: {
               Authorization: authToken,
@@ -105,7 +106,7 @@ const updateBookQuantities = async (books, authToken) => {
 
         // Update quantities in a single request
         const quantityResponse = await axios.patch(
-          `${BOOKS_SERVICE_URL}/api/v1/books-service/books/${book.bookId}/quantities`,
+          `${BOOK_SERVICE_URL}/books/${book.bookId}/quantities`,
           {
             availableQuantity: newQuantities.available,
             reserved: newQuantities.reserved,
@@ -140,6 +141,55 @@ const updateBookQuantities = async (books, authToken) => {
     );
   } catch (error) {
     console.error("Error updating book quantities:", error);
+    throw new AppError(
+      `Failed to update book quantities: ${error.response?.data?.message || error.message}`,
+      error.response?.status || 500
+    );
+  }
+};
+
+// Helper function to update book quantities for dispatch
+const updateBookQuantitiesForDispatch = async (bookId, quantity, authToken) => {
+  try {
+    console.log(`Updating book quantities for dispatch - BookId: ${bookId}, Quantity: ${quantity}`);
+    
+    // First get the current book data
+    const bookResponse = await axios.get(
+      `http://localhost:4001/api/v1/books-service/books/${bookId}`,
+      {
+        headers: {
+          Authorization: authToken,
+        },
+      }
+    );
+
+    console.log('Current book data:', bookResponse.data);
+
+    const currentBook = bookResponse.data.data.book;
+    
+    // Update the book with new reserved and inTransit values
+    const response = await axios.patch(
+      `http://localhost:4001/api/v1/books-service/books/${bookId}`,
+      {
+        reserved: Math.max(0, currentBook.reserved - quantity),  // Ensure we don't go below 0
+        inTransit: currentBook.inTransit + quantity
+      },
+      {
+        headers: {
+          Authorization: authToken,
+        },
+      }
+    );
+
+    console.log('Book update response:', response.data);
+
+    if (response.data.status !== 'success') {
+      throw new AppError('Failed to update book quantities', 500);
+    }
+
+    return response.data;
+  } catch (error) {
+    console.error('Error updating book quantities:', error.response?.data || error);
     throw new AppError(
       `Failed to update book quantities: ${error.response?.data?.message || error.message}`,
       error.response?.status || 500
@@ -188,7 +238,7 @@ const calculateDeliveryDate = async (deliveryPlanId) => {
 // Helper function to get book details
 const getBookDetails = async (bookId) => {
   try {
-    const response = await axios.get(`${BOOKS_SERVICE_URL}/books/${bookId}`);
+    const response = await axios.get(`${BOOK_SERVICE_URL}/books/${bookId}`);
     return response.data.data.book;
   } catch (error) {
     throw new AppError(
@@ -317,8 +367,8 @@ exports.createOrder = catchAsync(async (req, res, next) => {
     return next(new AppError("Cart does not belong to this user", 403));
   }
 
-  // 2. Validate subscription
-  const subscription = await validateSubscription(
+  // 2. Validate subscription and get subscription data
+  const subscriptionData = await validateSubscription(
     subscriptionId,
     userId,
     authToken
@@ -329,12 +379,6 @@ exports.createOrder = catchAsync(async (req, res, next) => {
   
   // 4. Manage student stock profile
   try {
-    const subscriptionData = await validateSubscription(
-      subscriptionId,
-      userId,
-      authToken
-    );
-    
     await manageStudentStockProfile(
       userId,
       subscriptionId,
@@ -485,7 +529,7 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
 });
 
 exports.dispatchOrder = catchAsync(async (req, res, next) => {
-  const order = await Order.findById(req.params.id).populate("cartId");
+  const order = await Order.findById(req.params.id);
 
   if (!order) {
     return next(new AppError("Order not found", 404));
@@ -495,11 +539,20 @@ exports.dispatchOrder = catchAsync(async (req, res, next) => {
     return next(new AppError("Order must be approved before dispatch", 400));
   }
 
-  // Move quantities from reserved to in-transit during dispatch
-  for (const item of order.cartId.items) {
-    await updateBookQuantities([{ bookId: item.bookId, quantity: -item.quantity }], req.headers.authorization);
+  // Move quantities from reserved to in-transit for each book in the order
+  try {
+    for (const item of order.books) {
+      await updateBookQuantitiesForDispatch(
+        item.bookId,
+        item.quantity,
+        req.headers.authorization
+      );
+    }
+  } catch (error) {
+    return next(error);
   }
 
+  // Update order status to dispatched
   order.status = "dispatched";
   await order.save();
 
