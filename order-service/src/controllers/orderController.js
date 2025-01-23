@@ -13,6 +13,9 @@ const BOOK_SERVICE_URL =
 const SUBSCRIPTION_SERVICE_URL =
   process.env.SUBSCRIPTION_SERVICE_URL ||
   "http://localhost:4004/api/v1/subscription-service";
+const DELIVERY_SERVICE_URL =
+  process.env.DELIVERY_SERVICE_URL ||
+  "http://localhost:4002/api/v1/orders";
 
 // Helper function to validate subscription
 const validateSubscription = async (subscriptionId, userId, authToken) => {
@@ -622,37 +625,95 @@ exports.requestCancellation = catchAsync(async (req, res, next) => {
 });
 
 exports.cancelOrder = catchAsync(async (req, res, next) => {
-  const order = await Order.findById(req.params.id).populate("cartId");
-
+  // 1. Find and validate order
+  const order = await Order.findById(req.params.id);
   if (!order) {
     return next(new AppError("Order not found", 404));
   }
 
+  // 2. Check if cancellation is requested
   if (!order.isCancellationRequested) {
     return next(new AppError("Cancellation must be requested first", 400));
   }
 
+  // 3. Check if order is not dispatched
   if (order.status === "dispatched") {
     return next(new AppError("Cannot cancel dispatched order", 400));
   }
 
-  // Return books to available stock
-  for (const item of order.cartId.items) {
-    await updateBookQuantities(
-      [{ bookId: item.bookId, quantity: item.quantity }],
-      req.headers.authorization
+  try {
+    // 4. Update book quantities - move from reserved back to available
+    for (const item of order.books) {
+      // First get current book data
+      const bookResponse = await axios.get(
+        `${BOOK_SERVICE_URL}/books/${item.bookId}`,
+        {
+          headers: {
+            Authorization: req.headers.authorization,
+          },
+        }
+      );
+      const currentBook = bookResponse.data.data.book;
+
+      // Update reserved quantity using books endpoint
+      await axios.patch(
+        `${BOOK_SERVICE_URL}/books/${item.bookId}`,
+        {
+          reserved: Math.max(0, currentBook.reserved - item.quantity)
+        },
+        {
+          headers: {
+            Authorization: req.headers.authorization,
+          },
+        }
+      );
+
+      // Update available quantity using book-stocks endpoint
+      await axios.patch(
+        `${BOOK_SERVICE_URL}/book-stocks/${item.bookId}/availableQuantity`,
+        {
+          availableQuantity: currentBook.availableQuantity + item.quantity
+        },
+        {
+          headers: {
+            Authorization: req.headers.authorization,
+          },
+        }
+      );
+    }
+
+    // 5. Update student stock profile - reduce utilized and increase left
+    const studentProfile = await StudentStockManagementProfile.findOne({
+      userId: order.userId,
+      subscriptionId: order.subscriptionId,
+      status: "ACTIVE",
+    });
+
+    if (studentProfile) {
+      // Reduce booksLimitUtilized by the number of books being cancelled
+      studentProfile.booksLimitUtilized = Math.max(0, studentProfile.booksLimitUtilized - order.totalBooksOrdered);
+      studentProfile.booksLimitLeft = studentProfile.maxBooksAllowed - studentProfile.booksLimitUtilized;
+      await studentProfile.save();
+    }
+
+    // 6. Update order status
+    order.status = "cancelled";
+    await order.save();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        order,
+      },
+    });
+  } catch (error) {
+    return next(
+      new AppError(
+        `Failed to cancel order: ${error.response?.data?.message || error.message}`,
+        error.response?.status || 500
+      )
     );
   }
-
-  order.status = "cancelled";
-  await order.save();
-
-  res.status(200).json({
-    status: "success",
-    data: {
-      order,
-    },
-  });
 });
 
 exports.dispatchOrder = catchAsync(async (req, res, next) => {
@@ -817,9 +878,10 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
       });
 
       if (studentProfile) {
-        // Reset the utilized books and update limit left
-        studentProfile.booksLimitUtilized = 0;
-        studentProfile.booksLimitLeft = studentProfile.maxBooksAllowed;
+        // Only reduce the booksLimitUtilized by the number of books being returned
+        // This preserves the count of other books (like previously lost books)
+        studentProfile.booksLimitUtilized = Math.max(0, studentProfile.booksLimitUtilized - order.totalBooksOrdered);
+        studentProfile.booksLimitLeft = studentProfile.maxBooksAllowed - studentProfile.booksLimitUtilized;
         await studentProfile.save();
       }
     }
@@ -857,3 +919,109 @@ const getBookCurrentQuantity = async (bookId, authToken) => {
   );
   return response.data.data.book;
 };
+
+// Get all orders
+exports.getAllOrders = catchAsync(async (req, res, next) => {
+  // Get all orders
+  const orders = await Order.find();
+
+  // Get subscription and delivery details for each order
+  const ordersWithDetails = await Promise.all(
+    orders.map(async (order) => {
+      try {
+        // Get subscription details
+        const subscriptionResponse = await axios.get(
+          `${SUBSCRIPTION_SERVICE_URL}/subscriptions/${order.subscriptionId}`,
+          {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          }
+        );
+
+        // Get delivery details
+        const deliveryResponse = await axios.get(
+          `${DELIVERY_SERVICE_URL}/${order._id}/delivery-plans/${order.deliveryId}`,
+          {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          }
+        );
+
+        // Convert order to object to make it mutable
+        const orderObj = order.toObject();
+
+        // Add subscription and delivery details
+        orderObj.subscription = subscriptionResponse.data.data.subscription;
+        orderObj.delivery = deliveryResponse.data.data.deliveryPlan;
+
+        return orderObj;
+      } catch (error) {
+        console.error(`Error fetching details for order ${order._id}:`, error);
+        // Return order without additional details if there's an error
+        return order;
+      }
+    })
+  );
+
+  res.status(200).json({
+    status: "success",
+    results: ordersWithDetails.length,
+    data: {
+      orders: ordersWithDetails,
+    },
+  });
+});
+
+// Get order by ID
+exports.getOrder = catchAsync(async (req, res, next) => {
+  // Get order
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
+
+  try {
+    // Get subscription details
+    const subscriptionResponse = await axios.get(
+      `${SUBSCRIPTION_SERVICE_URL}/subscriptions/${order.subscriptionId}`,
+      {
+        headers: {
+          Authorization: req.headers.authorization,
+        },
+      }
+    );
+
+    // Get delivery details
+    const deliveryResponse = await axios.get(
+      `${DELIVERY_SERVICE_URL}/${order._id}/delivery-plans/${order.deliveryId}`,
+      {
+        headers: {
+          Authorization: req.headers.authorization,
+        },
+      }
+    );
+
+    // Convert order to object to make it mutable
+    const orderObj = order.toObject();
+
+    // Add subscription and delivery details
+    orderObj.subscription = subscriptionResponse.data.data.subscription;
+    orderObj.delivery = deliveryResponse.data.data.deliveryPlan;
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        order: orderObj,
+      },
+    });
+  } catch (error) {
+    return next(
+      new AppError(
+        `Failed to fetch order details: ${error.response?.data?.message || error.message}`,
+        error.response?.status || 500
+      )
+    );
+  }
+});
