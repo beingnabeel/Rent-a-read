@@ -9,8 +9,7 @@ const mongoose = require("mongoose");
 
 // Configure base URLs for microservices
 const BOOK_SERVICE_URL =
-  process.env.BOOK_SERVICE_URL ||
-  "http://localhost:4001/api/v1/books-service";
+  process.env.BOOK_SERVICE_URL || "http://localhost:4001/api/v1/books-service";
 const SUBSCRIPTION_SERVICE_URL =
   process.env.SUBSCRIPTION_SERVICE_URL ||
   "http://localhost:4004/api/v1/subscription-service";
@@ -118,10 +117,7 @@ const updateBookQuantities = async (books, authToken) => {
           }
         );
 
-        console.log(
-          "Quantity update response:",
-          quantityResponse.data
-        );
+        console.log("Quantity update response:", quantityResponse.data);
 
         if (
           !quantityResponse.data ||
@@ -151,8 +147,10 @@ const updateBookQuantities = async (books, authToken) => {
 // Helper function to update book quantities for dispatch
 const updateBookQuantitiesForDispatch = async (bookId, quantity, authToken) => {
   try {
-    console.log(`Updating book quantities for dispatch - BookId: ${bookId}, Quantity: ${quantity}`);
-    
+    console.log(
+      `Updating book quantities for dispatch - BookId: ${bookId}, Quantity: ${quantity}`
+    );
+
     // First get the current book data
     const bookResponse = await axios.get(
       `http://localhost:4001/api/v1/books-service/books/${bookId}`,
@@ -163,16 +161,16 @@ const updateBookQuantitiesForDispatch = async (bookId, quantity, authToken) => {
       }
     );
 
-    console.log('Current book data:', bookResponse.data);
+    console.log("Current book data:", bookResponse.data);
 
     const currentBook = bookResponse.data.data.book;
-    
+
     // Update the book with new reserved and inTransit values
     const response = await axios.patch(
       `http://localhost:4001/api/v1/books-service/books/${bookId}`,
       {
-        reserved: Math.max(0, currentBook.reserved - quantity),  // Ensure we don't go below 0
-        inTransit: currentBook.inTransit + quantity
+        reserved: Math.max(0, currentBook.reserved - quantity), // Ensure we don't go below 0
+        inTransit: currentBook.inTransit + quantity,
       },
       {
         headers: {
@@ -181,20 +179,145 @@ const updateBookQuantitiesForDispatch = async (bookId, quantity, authToken) => {
       }
     );
 
-    console.log('Book update response:', response.data);
+    console.log("Book update response:", response.data);
 
-    if (response.data.status !== 'success') {
-      throw new AppError('Failed to update book quantities', 500);
+    if (response.data.status !== "success") {
+      throw new AppError("Failed to update book quantities", 500);
     }
 
     return response.data;
   } catch (error) {
-    console.error('Error updating book quantities:', error.response?.data || error);
+    console.error(
+      "Error updating book quantities:",
+      error.response?.data || error
+    );
     throw new AppError(
       `Failed to update book quantities: ${error.response?.data?.message || error.message}`,
       error.response?.status || 500
     );
   }
+};
+
+// Helper function to update book quantities for return/lost status
+const updateBookQuantitiesForReturn = async (
+  bookId,
+  quantity,
+  isLost,
+  authToken
+) => {
+  try {
+    console.log(
+      `Updating book quantities for ${isLost ? "lost" : "return"} - BookId: ${bookId}, Quantity: ${quantity}`
+    );
+
+    // Get current book data
+    const bookResponse = await axios.get(
+      `${BOOK_SERVICE_URL}/books/${bookId}`,
+      {
+        headers: {
+          Authorization: authToken,
+        },
+      }
+    );
+
+    const currentBook = bookResponse.data.data.book;
+    console.log("Current book data:", currentBook);
+
+    // First update inTransit quantity
+    const inTransitResponse = await axios.patch(
+      // `${BOOK_SERVICE_URL}/book-stocks/${bookId}/inTransit`,
+      `${BOOK_SERVICE_URL}/books/${bookId}`,
+      {
+        inTransit: Math.max(0, currentBook.inTransit - quantity), // Set absolute value
+      },
+      {
+        headers: {
+          Authorization: authToken,
+        },
+      }
+    );
+    console.log("inTransit update response:", inTransitResponse.data);
+
+    // Then update either noOfLostBook or availableQuantity
+    if (isLost) {
+      const lostResponse = await axios.patch(
+        `${BOOK_SERVICE_URL}/book-stocks/${bookId}/noOfLostBook`,
+        {
+          noOfLostBook: currentBook.noOfLostBook + quantity, // Set absolute value
+        },
+        {
+          headers: {
+            Authorization: authToken,
+          },
+        }
+      );
+      console.log("noOfLostBook update response:", lostResponse.data);
+    } else {
+      const availableResponse = await axios.patch(
+        `${BOOK_SERVICE_URL}/book-stocks/${bookId}/availableQuantity`,
+        {
+          availableQuantity: currentBook.availableQuantity + quantity, // Set absolute value
+        },
+        {
+          headers: {
+            Authorization: authToken,
+          },
+        }
+      );
+      console.log("availableQuantity update response:", availableResponse.data);
+    }
+
+    // Get final updated book data
+    const updatedBookResponse = await axios.get(
+      `${BOOK_SERVICE_URL}/books/${bookId}`,
+      {
+        headers: {
+          Authorization: authToken,
+        },
+      }
+    );
+
+    console.log("Final updated book data:", updatedBookResponse.data);
+    return updatedBookResponse.data;
+  } catch (error) {
+    console.error(
+      "Error updating book quantities:",
+      error.response?.data || error
+    );
+    throw new AppError(
+      `Failed to update book quantities: ${error.response?.data?.message || error.message}`,
+      error.response?.status || 500
+    );
+  }
+};
+
+// Helper function to update student stock profile for return
+const updateStudentStockProfileForReturn = async (
+  profile,
+  totalBooksOrdered
+) => {
+  try {
+    profile.booksLimitUtilized = Math.max(
+      0,
+      profile.booksLimitUtilized - totalBooksOrdered
+    );
+    profile.booksLimitLeft =
+      profile.maxBooksAllowed - profile.booksLimitUtilized;
+    await profile.save();
+    return profile;
+  } catch (error) {
+    throw new AppError(
+      `Failed to update student stock profile: ${error.message}`,
+      error.statusCode || 500
+    );
+  }
+};
+
+// Helper function to check if return is within due date
+const isWithinDueDate = (dueDate) => {
+  const currentDate = new Date();
+  const dueDateObj = new Date(dueDate);
+  return currentDate <= dueDateObj;
 };
 
 // Helper function to calculate delivery date
@@ -322,7 +445,8 @@ const manageStudentStockProfile = async (
         );
       }
 
-      profile.booksLimitLeft = maxBooksAllowed - (profile.booksLimitUtilized + totalBooksOrdered);
+      profile.booksLimitLeft =
+        maxBooksAllowed - (profile.booksLimitUtilized + totalBooksOrdered);
       profile.booksLimitUtilized += totalBooksOrdered;
       await profile.save();
     }
@@ -376,7 +500,7 @@ exports.createOrder = catchAsync(async (req, res, next) => {
 
   // 3. Calculate total books in cart
   const totalBooks = cart.items.reduce((sum, item) => sum + item.quantity, 0);
-  
+
   // 4. Manage student stock profile
   try {
     await manageStudentStockProfile(
@@ -514,7 +638,10 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
 
   // Return books to available stock
   for (const item of order.cartId.items) {
-    await updateBookQuantities([{ bookId: item.bookId, quantity: item.quantity }], req.headers.authorization);
+    await updateBookQuantities(
+      [{ bookId: item.bookId, quantity: item.quantity }],
+      req.headers.authorization
+    );
   }
 
   order.status = "cancelled";
@@ -574,7 +701,7 @@ exports.confirmReceived = catchAsync(async (req, res, next) => {
   if (order.status !== "dispatched") {
     return next(new AppError("Order must be dispatched first", 400));
   }
-
+  order.status = "delivered";
   order.isBooksReceived = true;
   await order.save();
 
@@ -586,38 +713,147 @@ exports.confirmReceived = catchAsync(async (req, res, next) => {
   });
 });
 
-exports.returnOrder = catchAsync(async (req, res, next) => {
-  const order = await Order.findById(req.params.id).populate("cartId");
+exports.requestReturn = catchAsync(async (req, res, next) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    return next(new AppError("Order not found", 404));
+  }
+  if (order.status !== "delivered") {
+    return next(new AppError("Order must be delivered first", 400));
+  }
+  if (order.isBooksReceived) {
+    order.status = "return-requested";
+    await order.save();
+    res.status(200).json({
+      status: "success",
+      data: {
+        order,
+      },
+    });
+  } else {
+    return next(new AppError("Book must be received before return", 400));
+  }
+});
 
+exports.returnOrder = catchAsync(async (req, res, next) => {
+  // 1. Find and validate order
+  const order = await Order.findById(req.params.id);
   if (!order) {
     return next(new AppError("Order not found", 404));
   }
 
+  // 2. Check if books are received
   if (!order.isBooksReceived) {
-    return next(new AppError("Book must be received before return", 400));
+    return next(new AppError("Books must be received before return", 400));
   }
 
-  const currentDate = new Date();
-  if (currentDate > order.dueDate) {
-    // Mark as lost if past due date
-    for (const item of order.cartId.items) {
-      await updateBookQuantities([{ bookId: item.bookId, quantity: item.quantity }], req.headers.authorization);
-    }
-    order.status = "lost";
-  } else {
-    // Return to available stock if within due date
-    for (const item of order.cartId.items) {
-      await updateBookQuantities([{ bookId: item.bookId, quantity: item.quantity }], req.headers.authorization);
-    }
-    order.status = "returned";
+  // 3. Check if return is requested
+  if (order.status !== "return-requested") {
+    return next(new AppError("Return must be requested first", 400));
   }
 
-  await order.save();
+  try {
+    // 4. Check if return is within due date
+    const currentDate = new Date();
+    const dueDate = new Date(order.dueDate);
+    const isWithinDueDate = currentDate <= dueDate;
 
-  res.status(200).json({
-    status: "success",
-    data: {
-      order,
-    },
-  });
+    console.log('Return date check:', {
+      currentDate,
+      dueDate,
+      isWithinDueDate,
+    });
+
+    // 5. Update book quantities based on whether return is within due date
+    for (const item of order.books) {
+      // First update inTransit using books endpoint
+      await axios.patch(
+        `${BOOK_SERVICE_URL}/books/${item.bookId}`,
+        {
+          inTransit: 0  // Clear inTransit
+        },
+        {
+          headers: {
+            Authorization: req.headers.authorization,
+          },
+        }
+      );
+
+      if (!isWithinDueDate) {
+        // If past due date, update noOfLostBook using book-stocks endpoint
+        await axios.patch(
+          `${BOOK_SERVICE_URL}/book-stocks/${item.bookId}/noOfLostBook`,
+          {
+            noOfLostBook: (await getBookCurrentQuantity(item.bookId, req.headers.authorization)).noOfLostBook + item.quantity
+          },
+          {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          }
+        );
+      } else {
+        // If within due date, update availableQuantity using book-stocks endpoint
+        await axios.patch(
+          `${BOOK_SERVICE_URL}/book-stocks/${item.bookId}/availableQuantity`,
+          {
+            availableQuantity: (await getBookCurrentQuantity(item.bookId, req.headers.authorization)).availableQuantity + item.quantity
+          },
+          {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          }
+        );
+      }
+    }
+
+    // 6. If within due date, update student stock profile
+    if (isWithinDueDate) {
+      const studentProfile = await StudentStockManagementProfile.findOne({
+        userId: order.userId,
+        subscriptionId: order.subscriptionId,
+        status: "ACTIVE",
+      });
+
+      if (studentProfile) {
+        // Reset the utilized books and update limit left
+        studentProfile.booksLimitUtilized = 0;
+        studentProfile.booksLimitLeft = studentProfile.maxBooksAllowed;
+        await studentProfile.save();
+      }
+    }
+    // If past due date, don't update student profile - keep the books counted as utilized
+
+    // 7. Update order status
+    order.status = isWithinDueDate ? "returned" : "lost";
+    await order.save();
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        order,
+      },
+    });
+  } catch (error) {
+    return next(
+      new AppError(
+        `Failed to process return: ${error.response?.data?.message || error.message}`,
+        error.response?.status || 500
+      )
+    );
+  }
 });
+
+// Helper function to get current book quantities
+const getBookCurrentQuantity = async (bookId, authToken) => {
+  const response = await axios.get(
+    `${BOOK_SERVICE_URL}/books/${bookId}`,
+    {
+      headers: {
+        Authorization: authToken,
+      },
+    }
+  );
+  return response.data.data.book;
+};

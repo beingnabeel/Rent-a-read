@@ -16,6 +16,7 @@ router.route("/:id/cancel").patch(orderController.cancelOrder);
 router.route("/:id/dispatch").patch(orderController.dispatchOrder);
 
 router.route("/:id/confirm-received").patch(orderController.confirmReceived);
+router.route("/:id/request-return").patch(orderController.requestReturn);
 
 router.route("/:id/return").patch(orderController.returnOrder);
 
