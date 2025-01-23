@@ -145,7 +145,17 @@ const schoolServiceProxy = createProxyMiddleware({
   target: SCHOOL_SERVICE_URL,
   changeOrigin: true,
   pathRewrite: {
-    "^/api/v1/schools": "/api/v1/schools-service",
+    "^/api/v1/schools-service": "/api/v1/schools-service",
+  },
+  onProxyReq: function (proxyReq, req, res) {
+    console.log("School service proxy request path:", proxyReq.path);
+
+    if (req.body) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader("Content-Type", "application/json");
+      proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+    }
   },
   onError: (err, req, res) => {
     console.error("School Service Proxy Error:", err);
@@ -964,6 +974,165 @@ router.use(
     }
   },
   subscriptionServiceProxy
+);
+
+// School Routes with Role-Based Access Control
+// Create School (ADMIN only)
+router.post(
+  "/api/v1/schools-service/schools",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
+);
+
+// Get All Schools (ADMIN with full permissions, STUDENT/SCHOOL_ADMIN with Read_Data)
+router.get(
+  "/api/v1/schools-service/schools",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  schoolServiceProxy
+);
+
+// Update School by ID (ADMIN with full permissions, STUDENT/SCHOOL_ADMIN with Read_Data)
+router.patch(
+  "/api/v1/schools-service/schools/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  schoolServiceProxy
+);
+
+// Get School by ID (ADMIN with full permissions, STUDENT/SCHOOL_ADMIN with Read_Data)
+router.get(
+  "/api/v1/schools-service/schools/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  schoolServiceProxy
+);
+
+// Create School Leave (ADMIN only)
+router.post(
+  "/api/v1/schools-service/schools/:schoolId/leaves",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
+);
+
+// Get All School Leaves (ADMIN with full permissions, STUDENT/SCHOOL_ADMIN with Read_Data)
+router.get(
+  "/api/v1/schools-service/schools/:schoolId/leaves",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  schoolServiceProxy
+);
+
+// Get School Leave by ID (ADMIN with full permissions, STUDENT/SCHOOL_ADMIN with Read_Data)
+router.get(
+  "/api/v1/schools-service/schools/:schoolId/leaves/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  schoolServiceProxy
+);
+
+// Update School Leave (ADMIN with full permissions, STUDENT/SCHOOL_ADMIN with Read_Data)
+router.patch(
+  "/api/v1/schools-service/schools/:schoolId/leaves/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  schoolServiceProxy
+);
+
+// Delete School Leave (ADMIN only)
+router.delete(
+  "/api/v1/schools-service/schools/:schoolId/leaves/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
+);
+
+// School Enquiry Routes (All roles with full permissions)
+router.post(
+  "/api/v1/schools-service/schools/enquiry",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
+);
+
+router.get(
+  "/api/v1/schools-service/schools/enquiry",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
 );
 
 module.exports = router;
