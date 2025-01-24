@@ -18,6 +18,7 @@ router
 
 router
   .route("/:id")
+  .get(deliveryPlanController.getDeliveryPlan)
   .patch(deliveryPlanController.updateDeliveryPlan)
   .delete(deliveryPlanController.deleteDeliveryPlan);
 

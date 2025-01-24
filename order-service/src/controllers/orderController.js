@@ -14,8 +14,7 @@ const SUBSCRIPTION_SERVICE_URL =
   process.env.SUBSCRIPTION_SERVICE_URL ||
   "http://localhost:4004/api/v1/subscription-service";
 const DELIVERY_SERVICE_URL =
-  process.env.DELIVERY_SERVICE_URL ||
-  "http://localhost:4002/api/v1/orders";
+  process.env.ORDER_SERVICE_URL || "http://localhost:4005/api/v1";
 
 // Helper function to validate subscription
 const validateSubscription = async (subscriptionId, userId, authToken) => {
@@ -659,7 +658,7 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
       await axios.patch(
         `${BOOK_SERVICE_URL}/books/${item.bookId}`,
         {
-          reserved: Math.max(0, currentBook.reserved - item.quantity)
+          reserved: Math.max(0, currentBook.reserved - item.quantity),
         },
         {
           headers: {
@@ -672,7 +671,7 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
       await axios.patch(
         `${BOOK_SERVICE_URL}/book-stocks/${item.bookId}/availableQuantity`,
         {
-          availableQuantity: currentBook.availableQuantity + item.quantity
+          availableQuantity: currentBook.availableQuantity + item.quantity,
         },
         {
           headers: {
@@ -691,8 +690,12 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
 
     if (studentProfile) {
       // Reduce booksLimitUtilized by the number of books being cancelled
-      studentProfile.booksLimitUtilized = Math.max(0, studentProfile.booksLimitUtilized - order.totalBooksOrdered);
-      studentProfile.booksLimitLeft = studentProfile.maxBooksAllowed - studentProfile.booksLimitUtilized;
+      studentProfile.booksLimitUtilized = Math.max(
+        0,
+        studentProfile.booksLimitUtilized - order.totalBooksOrdered
+      );
+      studentProfile.booksLimitLeft =
+        studentProfile.maxBooksAllowed - studentProfile.booksLimitUtilized;
       await studentProfile.save();
     }
 
@@ -819,7 +822,7 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
     const dueDate = new Date(order.dueDate);
     const isWithinDueDate = currentDate <= dueDate;
 
-    console.log('Return date check:', {
+    console.log("Return date check:", {
       currentDate,
       dueDate,
       isWithinDueDate,
@@ -831,7 +834,7 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
       await axios.patch(
         `${BOOK_SERVICE_URL}/books/${item.bookId}`,
         {
-          inTransit: 0  // Clear inTransit
+          inTransit: 0, // Clear inTransit
         },
         {
           headers: {
@@ -845,7 +848,13 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
         await axios.patch(
           `${BOOK_SERVICE_URL}/book-stocks/${item.bookId}/noOfLostBook`,
           {
-            noOfLostBook: (await getBookCurrentQuantity(item.bookId, req.headers.authorization)).noOfLostBook + item.quantity
+            noOfLostBook:
+              (
+                await getBookCurrentQuantity(
+                  item.bookId,
+                  req.headers.authorization
+                )
+              ).noOfLostBook + item.quantity,
           },
           {
             headers: {
@@ -858,7 +867,13 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
         await axios.patch(
           `${BOOK_SERVICE_URL}/book-stocks/${item.bookId}/availableQuantity`,
           {
-            availableQuantity: (await getBookCurrentQuantity(item.bookId, req.headers.authorization)).availableQuantity + item.quantity
+            availableQuantity:
+              (
+                await getBookCurrentQuantity(
+                  item.bookId,
+                  req.headers.authorization
+                )
+              ).availableQuantity + item.quantity,
           },
           {
             headers: {
@@ -880,8 +895,12 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
       if (studentProfile) {
         // Only reduce the booksLimitUtilized by the number of books being returned
         // This preserves the count of other books (like previously lost books)
-        studentProfile.booksLimitUtilized = Math.max(0, studentProfile.booksLimitUtilized - order.totalBooksOrdered);
-        studentProfile.booksLimitLeft = studentProfile.maxBooksAllowed - studentProfile.booksLimitUtilized;
+        studentProfile.booksLimitUtilized = Math.max(
+          0,
+          studentProfile.booksLimitUtilized - order.totalBooksOrdered
+        );
+        studentProfile.booksLimitLeft =
+          studentProfile.maxBooksAllowed - studentProfile.booksLimitUtilized;
         await studentProfile.save();
       }
     }
@@ -909,14 +928,11 @@ exports.returnOrder = catchAsync(async (req, res, next) => {
 
 // Helper function to get current book quantities
 const getBookCurrentQuantity = async (bookId, authToken) => {
-  const response = await axios.get(
-    `${BOOK_SERVICE_URL}/books/${bookId}`,
-    {
-      headers: {
-        Authorization: authToken,
-      },
-    }
-  );
+  const response = await axios.get(`${BOOK_SERVICE_URL}/books/${bookId}`, {
+    headers: {
+      Authorization: authToken,
+    },
+  });
   return response.data.data.book;
 };
 
@@ -941,7 +957,7 @@ exports.getAllOrders = catchAsync(async (req, res, next) => {
 
         // Get delivery details
         const deliveryResponse = await axios.get(
-          `${DELIVERY_SERVICE_URL}/${order._id}/delivery-plans/${order.deliveryId}`,
+          `${DELIVERY_SERVICE_URL}/order-service/delivery-plans/${order.deliveryId}`,
           {
             headers: {
               Authorization: req.headers.authorization,
@@ -995,7 +1011,7 @@ exports.getOrder = catchAsync(async (req, res, next) => {
 
     // Get delivery details
     const deliveryResponse = await axios.get(
-      `${DELIVERY_SERVICE_URL}/${order._id}/delivery-plans/${order.deliveryId}`,
+      `${DELIVERY_SERVICE_URL}/order-service/delivery-plans/${order.deliveryId}`,
       {
         headers: {
           Authorization: req.headers.authorization,
@@ -1017,6 +1033,7 @@ exports.getOrder = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error("Error fetching order details:", error.response?.data || error);
     return next(
       new AppError(
         `Failed to fetch order details: ${error.response?.data?.message || error.message}`,

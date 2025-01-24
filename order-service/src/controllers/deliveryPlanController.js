@@ -351,6 +351,22 @@ exports.getUserDeliveryPlans = catchAsync(async (req, res, next) => {
   });
 });
 
+// Get single delivery plan
+exports.getDeliveryPlan = catchAsync(async (req, res, next) => {
+  const deliveryPlan = await DeliveryPlan.findById(req.params.id);
+
+  if (!deliveryPlan) {
+    return next(new AppError('No delivery plan found with that ID', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      deliveryPlan
+    }
+  });
+});
+
 // Update delivery plan
 exports.updateDeliveryPlan = catchAsync(async (req, res, next) => {
   const { deliveryDay, deliveryNotes } = req.body;
