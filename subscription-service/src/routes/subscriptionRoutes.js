@@ -106,6 +106,8 @@ router.post(
   subscriptionController.getSessionDetails
 );
 
+router.get('/subscriptions/user/:userId', subscriptionController.getSubscriptionByUserId);
+
 router.get(
   "/subscriptions/user/:userId/active",
   subscriptionController.getUserActiveSubscription

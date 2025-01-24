@@ -92,6 +92,25 @@ exports.getSubscription = catchAsync(async (req, res, next) => {
   });
 });
 
+exports.getSubscriptionByUserId = catchAsync(async (req, res, next) => {
+  const { userId } = req.params;
+
+  const subscription = await Subscription.findOne({ userId })
+    .populate('planFrequencyTypeId')
+    .populate('planOptionTypeId');
+
+  if (!subscription) {
+    return next(new AppError('No subscription found for this user', 404));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      subscription
+    }
+  });
+});
+
 exports.getAllSubscriptions = catchAsync(async (req, res, next) => {
   console.log("Request query: ", req.query);
   const page = parseInt(req.query.page) || 1;
