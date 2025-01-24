@@ -167,6 +167,7 @@ exports.getCart = catchAsync(async (req, res, next) => {
 
 exports.updateCart = catchAsync(async (req, res, next) => {
   const { items } = req.body;
+  const { operation } = req.query; // 'add' or 'remove'
   const authToken = req.headers.authorization;
 
   const cart = await Cart.findById(req.params.id);
@@ -185,7 +186,12 @@ exports.updateCart = catchAsync(async (req, res, next) => {
     return next(error);
   }
 
-  // Validate book availability for new items
+  // Validate operation parameter
+  if (operation && !['add', 'remove'].includes(operation)) {
+    return next(new AppError("Invalid operation. Use 'add' or 'remove'", 400));
+  }
+
+  // Validate book availability and process items
   for (const item of items) {
     try {
       const response = await axios.get(
@@ -202,13 +208,63 @@ exports.updateCart = catchAsync(async (req, res, next) => {
         return next(new AppError(`Book not found: ${item.bookId}`, 404));
       }
 
-      if (book.availableQuantity < item.quantity) {
-        return next(
-          new AppError(
-            `Insufficient stock for book ${book.title}. Available: ${book.availableQuantity}, Requested: ${item.quantity}`,
-            400
-          )
-        );
+      // Find existing item in cart
+      const existingItemIndex = cart.items.findIndex(
+        (cartItem) => cartItem.bookId.toString() === item.bookId
+      );
+
+      if (operation === 'add') {
+        // Check stock availability for addition
+        const newQuantity = existingItemIndex !== -1 
+          ? cart.items[existingItemIndex].quantity + item.quantity
+          : item.quantity;
+
+        if (book.availableQuantity < newQuantity) {
+          return next(
+            new AppError(
+              `Insufficient stock for book ${book.title}. Available: ${book.availableQuantity}, Requested: ${newQuantity}`,
+              400
+            )
+          );
+        }
+
+        if (existingItemIndex !== -1) {
+          // Update existing item
+          cart.items[existingItemIndex].quantity = newQuantity;
+        } else {
+          // Add new item
+          cart.items.push(item);
+        }
+      } else if (operation === 'remove') {
+        if (existingItemIndex === -1) {
+          return next(
+            new AppError(
+              `Book ${item.bookId} not found in cart`,
+              404
+            )
+          );
+        }
+
+        const currentQuantity = cart.items[existingItemIndex].quantity;
+        if (currentQuantity < item.quantity) {
+          return next(
+            new AppError(
+              `Cannot remove ${item.quantity} items. Only ${currentQuantity} items in cart`,
+              400
+            )
+          );
+        }
+
+        // Update quantity or remove item if quantity becomes 0
+        const newQuantity = currentQuantity - item.quantity;
+        if (newQuantity === 0) {
+          cart.items.splice(existingItemIndex, 1);
+        } else {
+          cart.items[existingItemIndex].quantity = newQuantity;
+        }
+      } else {
+        // If no operation specified, replace items as before
+        cart.items = items;
       }
     } catch (error) {
       return next(
@@ -223,9 +279,8 @@ exports.updateCart = catchAsync(async (req, res, next) => {
   // Reset expiry time when cart is updated
   const expiryTime = new Date();
   expiryTime.setHours(expiryTime.getHours() + 6);
-
-  cart.items = items;
   cart.expiryTime = expiryTime;
+  
   await cart.save();
 
   res.status(200).json({
