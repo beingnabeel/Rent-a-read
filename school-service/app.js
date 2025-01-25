@@ -5,6 +5,7 @@ const AppError = require("./src/utils/appError");
 const globalErrorHandler = require("./src/controllers/errorController");
 const schoolRouter = require("./src/routes/schoolRouter");
 const schoolEnquiryRouter = require("./src/routes/schoolEnquiryRouter");
+const schoolAdminRouter = require("./src/routes/schoolAdminRoutes");
 
 const app = express();
 if (process.env.NODE_ENV === "development") {
@@ -23,6 +24,7 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: "10kb" }));
 app.use("/api/v1/schools-service/schools/enquiry", schoolEnquiryRouter);
 app.use("/api/v1/schools-service/schools", schoolRouter);
+app.use("/api/v1/schools-service/school-admin", schoolAdminRouter);
 
 app.use((req, res, next) => {
   console.log(`Hello from the middleware!`);

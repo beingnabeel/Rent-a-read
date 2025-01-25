@@ -5,6 +5,7 @@ const orderRoutes = require("./src/routes/orderRoutes");
 const cartRoutes = require("./src/routes/cartRoutes");
 const deliveryPlanRoutes = require("./src/routes/deliveryPlanRoutes");
 const globalErrorHandler = require("./src/controllers/errorController");
+const studentStockManagementProfileRouter = require("./src/routes/studentStockManagementProfileRoutes");
 
 const app = express();
 
@@ -17,6 +18,10 @@ app.use(cors());
 app.use("/api/v1/order-service/orders", orderRoutes);
 app.use("/api/v1/order-service/carts", cartRoutes);
 app.use("/api/v1/order-service/delivery-plans", deliveryPlanRoutes);
+app.use(
+  "/api/v1/order-service/student-stock-management-profiles",
+  studentStockManagementProfileRouter
+);
 
 // Error handling
 app.use(globalErrorHandler);

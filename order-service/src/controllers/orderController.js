@@ -15,6 +15,8 @@ const SUBSCRIPTION_SERVICE_URL =
   "http://localhost:4004/api/v1/subscription-service";
 const DELIVERY_SERVICE_URL =
   process.env.ORDER_SERVICE_URL || "http://localhost:4005/api/v1";
+const ORDER_SERVICE_URL =
+  process.env.ORDER_SERVICE_URL || "http://localhost:4005/api/v1";
 
 // Helper function to validate subscription
 const validateSubscription = async (subscriptionId, userId, authToken) => {
@@ -1056,4 +1058,74 @@ exports.getOrder = catchAsync(async (req, res, next) => {
       )
     );
   }
+});
+
+// Get all orders for a specific user
+exports.getUserOrders = catchAsync(async (req, res, next) => {
+  const { userId } = req.params;
+
+  // Get all orders for the user
+  const orders = await Order.find({ userId })
+    .populate({
+      path: "books.bookId",
+      select: "title author publisher isbn imageUrls paperType series",
+    })
+    .populate({
+      path: "deliveryId",
+      select: "pickupDate returnDate deliveryPartner deliveryAddress",
+    })
+    .sort({ createdAt: -1 }); // Sort by creation date, newest first
+
+  if (!orders) {
+    return next(new AppError("No orders found for this user", 404));
+  }
+
+  // Get book details for each order
+  const ordersWithDetails = await Promise.all(
+    orders.map(async (order) => {
+      const orderObj = order.toObject();
+
+      // Get subscription details
+      try {
+        const subscriptionResponse = await axios.get(
+          `${SUBSCRIPTION_SERVICE_URL}/subscriptions/${order.subscriptionId}`,
+          {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          }
+        );
+        orderObj.subscription = subscriptionResponse.data.data.subscription;
+      } catch (error) {
+        console.error("Error fetching subscription details:", error);
+        orderObj.subscription = null;
+      }
+
+      // Get cart details
+      try {
+        const cartResponse = await axios.get(
+          `${ORDER_SERVICE_URL}/carts/${order.cartId}`,
+          {
+            headers: {
+              Authorization: req.headers.authorization,
+            },
+          }
+        );
+        orderObj.cart = cartResponse.data.data.cart;
+      } catch (error) {
+        console.error("Error fetching cart details:", error);
+        orderObj.cart = null;
+      }
+
+      return orderObj;
+    })
+  );
+
+  res.status(200).json({
+    status: "success",
+    results: ordersWithDetails.length,
+    data: {
+      orders: ordersWithDetails,
+    },
+  });
 });

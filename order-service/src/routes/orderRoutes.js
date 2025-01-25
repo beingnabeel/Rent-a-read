@@ -24,4 +24,6 @@ router.route("/:id/request-return").patch(orderController.requestReturn);
 
 router.route("/:id/return").patch(orderController.returnOrder);
 
+router.route("/user/:userId").get(orderController.getUserOrders);
+
 module.exports = router;
