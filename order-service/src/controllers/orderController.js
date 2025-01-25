@@ -93,6 +93,8 @@ const updateBookQuantities = async (books, authToken) => {
         }
 
         const bookData = bookResponse.data.data.book;
+        
+        // Check if enough books are available
         if (bookData.availableQuantity < book.quantity) {
           throw new Error(
             `Insufficient stock for book ${book.bookId}. Available: ${bookData.availableQuantity}, Requested: ${book.quantity}`
@@ -100,17 +102,30 @@ const updateBookQuantities = async (books, authToken) => {
         }
 
         // Calculate new quantities
-        const newQuantities = {
-          available: bookData.availableQuantity - book.quantity,
-          reserved: (bookData.reserved || 0) + book.quantity,
-        };
+        const newAvailable = bookData.availableQuantity - book.quantity;
+
+        // Important: The book service adds the reserved value to existing reserved,
+        // so we need to calculate the difference
+        const reservedDifference = book.quantity;
+
+        console.log("Quantity validation:", {
+          bookId: book.bookId,
+          currentAvailable: bookData.availableQuantity,
+          currentReserved: bookData.reserved,
+          currentInTransit: bookData.inTransit,
+          currentLost: bookData.noOfLostBook,
+          newAvailable,
+          reservedDifference,
+          expectedNewReserved: bookData.reserved + reservedDifference,
+          totalQuantity: bookData.totalQuantity
+        });
 
         // Update quantities in a single request
         const quantityResponse = await axios.patch(
           `${BOOK_SERVICE_URL}/books/${book.bookId}/quantities`,
           {
-            availableQuantity: newQuantities.available,
-            reserved: newQuantities.reserved,
+            availableQuantity: newAvailable,
+            reserved: reservedDifference, // Send the difference to add
           },
           {
             headers: {
@@ -132,16 +147,16 @@ const updateBookQuantities = async (books, authToken) => {
 
         return {
           bookId: book.bookId,
-          availableQuantity: newQuantities.available,
-          reserved: newQuantities.reserved,
+          availableQuantity: newAvailable,
+          reserved: bookData.reserved + reservedDifference,
         };
       })
     );
   } catch (error) {
-    console.error("Error updating book quantities:", error);
+    console.error("Error updating book quantities:", error.response?.data || error);
     throw new AppError(
       `Failed to update book quantities: ${error.response?.data?.message || error.message}`,
-      error.response?.status || 500
+      error.response?.status || 400
     );
   }
 };

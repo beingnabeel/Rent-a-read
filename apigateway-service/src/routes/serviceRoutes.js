@@ -1135,4 +1135,210 @@ router.get(
   schoolServiceProxy
 );
 
+// Cart Routes with Role-Based Access Control
+router.post(
+  "/api/v1/order-service/carts",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/carts/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.patch(
+  "/api/v1/order-service/carts/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.delete(
+  "/api/v1/order-service/carts/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/carts/:id/details",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/carts/user/:id/active",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+// Delivery Plan Routes with Role-Based Access Control
+router.post(
+  "/api/v1/order-service/delivery-plans",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/delivery-plans",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.patch(
+  "/api/v1/order-service/delivery-plans/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.delete(
+  "/api/v1/order-service/delivery-plans/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/delivery-plans/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  orderServiceProxy
+);
+
+// Order Routes with Role-Based Access Control
+router.post(
+  "/api/v1/order-service/orders",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+// Admin-only routes with full permissions
+router.patch(
+  "/api/v1/order-service/orders/:id/approve",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.patch(
+  "/api/v1/order-service/orders/:id/dispatch",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+// Routes accessible by all roles with full permissions
+router.patch(
+  "/api/v1/order-service/orders/:id/confirm-received",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.patch(
+  "/api/v1/order-service/orders/:id/request-return",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+// Admin-only route for return confirmation
+router.patch(
+  "/api/v1/order-service/orders/:id/return",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+// Routes for order cancellation
+router.patch(
+  "/api/v1/order-service/orders/:id/request-cancellation",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.patch(
+  "/api/v1/order-service/orders/:id/cancel",
+  verifyToken,
+  authorizeRoles(["ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+// Routes for getting orders with different permissions based on role
+router.get(
+  "/api/v1/order-service/orders",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/orders/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  (req, res, next) => {
+    if (req.user.role === "ADMIN") {
+      authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"])(
+        req,
+        res,
+        next
+      );
+    } else {
+      authorizePermissions(["Read_Data"])(req, res, next);
+    }
+  },
+  orderServiceProxy
+);
+
 module.exports = router;
