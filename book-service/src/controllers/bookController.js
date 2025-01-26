@@ -13,7 +13,6 @@ const {
 const fs = require("fs");
 const csv = require("csv-parser");
 const createCsvStringifier = require("csv-writer").createObjectCsvStringifier;
-// const multer = require("multer");
 const AppError = require("../utils/appError");
 const catchAsync = require("../utils/catchAsync");
 const Book = require("../models/bookModel");
@@ -22,18 +21,21 @@ const ParentCategory = require("../models/parentCategoryModel");
 const Category = require("../models/categoryModel");
 const Language = require("../models/languageModel");
 const BookQuantity = require("../models/bookQuantity");
+const { logger } = require("../utils/logger");
 
-// alias route handler
 exports.aliasLatestBooks = (req, res, next) => {
   req.query.limit = 5;
   req.query.sort = "-createdAt";
-  // req.query.fields = "title,description,categoryId,languageId";
-  console.log("dslfjsdoflsjd");
+  logger.info('Alias Latest Books middleware applied', { query: req.query });
   next();
 };
 
 exports.getAllBooks = catchAsync(async (req, res, next) => {
-  console.log("Request query:", req.query);
+  logger.info('Fetching all books', { 
+    query: req.query,
+    page: req.query.page || 1,
+    limit: req.query.limit || 10
+  });
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -42,89 +44,97 @@ exports.getAllBooks = catchAsync(async (req, res, next) => {
   const features = new APIFeatures(query, req.query).filter().search();
   const totalElements = await Book.countDocuments(features.query.getFilter());
   features.sort().limitFields().paginate();
-  const books = await features.query;
+  
+  try {
+    const books = await features.query;
 
-  if (!books) {
-    return res.status(200).json({
-      data: [],
+    if (!books || books.length === 0) {
+      logger.warn('No books found for the given criteria', { 
+        query: req.query,
+        filter: features.query.getFilter()
+      });
+    }
+
+    logger.info('Books fetched successfully', {
+      count: books.length,
+      totalElements,
+      page,
+      limit
+    });
+
+    // here we are generating signed URLs for images
+    const booksWithSignedUrls = await Promise.all(
+      books.map(async (book) => {
+        if (!book) return null; // here we are handling the null/undefined book objects
+
+        const bookObject = book.toObject();
+
+        // Generate signed URLs for images if they exist
+        if (bookObject.imageUrls && bookObject.imageUrls.length > 0) {
+          const imageUrlPromises = bookObject.imageUrls.map(async (imageUrl) => {
+            try {
+              // Extract the key from the full URL
+              const urlParts = imageUrl.split("/");
+              const key = urlParts.slice(3).join("/"); // Assumes the key starts after "amazonaws.com/
+              return await getImageSignedUrl(key);
+            } catch (error) {
+              logger.error(`Failed to generate signed URL for ${imageUrl}:`, error);
+              return null;
+            }
+          });
+
+          // Wait for all signed URLs to be generated
+          const signedImageUrls = await Promise.all(imageUrlPromises);
+
+          // here we are replacing the image URLs with signed URLs, filtering out any failed generations
+          bookObject.imageUrls = signedImageUrls.filter((url) => url !== null);
+        }
+
+        return {
+          ...bookObject,
+          createdBy: null,
+          updatedBy: null,
+        };
+      })
+    );
+
+    // Filter out any null values from the results
+    const validBooks = booksWithSignedUrls.filter((book) => book !== null);
+
+    const formattedResponse = {
+      data: validBooks,
       pageNumber: page,
       pageSize: limit,
-      totalPages: 0,
-      totalElements: 0,
-      first: true,
-      last: true,
-      numberOfElements: 0,
+      totalPages: Math.ceil(totalElements / limit),
+      totalElements,
+      first: page === 1,
+      last: page === Math.ceil(totalElements / limit),
+      numberOfElements: validBooks.length,
+    };
+
+    res.status(200).json(formattedResponse);
+  } catch (error) {
+    logger.error('Error fetching books', {
+      error: error.message,
+      stack: error.stack,
+      query: req.query
     });
+    return next(new AppError('Error fetching books', 500));
   }
-
-  const totalPages = Math.ceil(totalElements / limit);
-
-  // here we are generating signed URLs for images
-  const booksWithSignedUrls = await Promise.all(
-    books.map(async (book) => {
-      if (!book) return null; // here we are handling the null/undefined book objects
-
-      const bookObject = book.toObject();
-
-      // Generate signed URLs for images if they exist
-      if (bookObject.imageUrls && bookObject.imageUrls.length > 0) {
-        const imageUrlPromises = bookObject.imageUrls.map(async (imageUrl) => {
-          try {
-            // Extract the key from the full URL
-            const urlParts = imageUrl.split("/");
-            const key = urlParts.slice(3).join("/"); // Assumes the key starts after "amazonaws.com/"
-            return await getImageSignedUrl(key);
-          } catch (error) {
-            console.error(
-              `Failed to generate signed URL for ${imageUrl}:`,
-              error
-            );
-            return null;
-          }
-        });
-
-        // Wait for all signed URLs to be generated
-        const signedImageUrls = await Promise.all(imageUrlPromises);
-
-        // here we are replacing the image URLs with signed URLs, filtering out any failed generations
-        bookObject.imageUrls = signedImageUrls.filter((url) => url !== null);
-      }
-
-      return {
-        ...bookObject,
-        createdBy: null,
-        updatedBy: null,
-      };
-    })
-  );
-
-  // Filter out any null values from the results
-  const validBooks = booksWithSignedUrls.filter((book) => book !== null);
-
-  const formattedResponse = {
-    data: validBooks,
-    pageNumber: page,
-    pageSize: limit,
-    totalPages,
-    totalElements,
-    first: page === 1,
-    last: page === totalPages,
-    numberOfElements: validBooks.length,
-  };
-
-  res.status(200).json(formattedResponse);
 });
 
 exports.getBookById = catchAsync(async (req, res, next) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
+    logger.error('Invalid book ID', { id });
     return next(new AppError("Invalid book ID", 404));
   }
 
   const book = await Book.findById(id);
 
   if (!book) {
+    logger.error('No book found with that ID', { id });
     return next(new AppError("No book found with that ID", 404));
   }
 
@@ -147,7 +157,7 @@ exports.getBookById = catchAsync(async (req, res, next) => {
       const signedImageUrl = await getImageSignedUrl(imageKey);
       bookObject.imageUrls[0] = signedImageUrl;
     } catch (error) {
-      console.error("Error generating signed URL:", error);
+      logger.error("Error generating signed URL:", error);
       // Instead of failing, we'll just leave the original URL
       bookObject.imageUrls[0] = book.imageUrls[0];
     }
@@ -162,13 +172,28 @@ exports.getBookById = catchAsync(async (req, res, next) => {
 });
 
 exports.createBook = catchAsync(async (req, res, next) => {
+  logger.info('Creating new book', { 
+    bookData: { ...req.body, image: req.file ? 'Present' : 'Not present' }
+  });
+
   // Validate image upload
   if (!req.file || !req.file.location) {
+    logger.error('Image upload failed during book creation', {
+      file: req.file,
+      body: req.body
+    });
     return next(new AppError("Image upload failed", 400));
   }
 
   try {
-    // Create the book
+    // Additional validation
+    if (!req.body.title || !req.body.categoryId || !req.body.languageId) {
+      logger.error('Missing required fields in book creation', {
+        providedFields: Object.keys(req.body)
+      });
+      return next(new AppError('Missing required fields', 400));
+    }
+
     const newBook = await Book.create({
       title: req.body.title,
       description: req.body.description,
@@ -202,8 +227,18 @@ exports.createBook = catchAsync(async (req, res, next) => {
       // Cleanup: delete the created book
       await Book.findByIdAndDelete(newBook._id);
       await deleteImage(req.file.key);
+      logger.error('Failed to create book quantity record', {
+        bookId: newBook._id,
+        totalQuantity: req.body.totalQuantity,
+        availableQuantity: req.body.availableQuantity
+      });
       return next(new AppError("Failed to create book quantity record", 500));
     }
+
+    logger.info('Book created successfully', {
+      bookId: newBook._id,
+      title: newBook.title
+    });
 
     res.status(201).json({
       status: "success",
@@ -217,6 +252,11 @@ exports.createBook = catchAsync(async (req, res, next) => {
     if (req.file) {
       await deleteImage(req.file.key);
     }
+    logger.error('Error creating book', {
+      error: error.message,
+      stack: error.stack,
+      requestBody: req.body
+    });
     return next(new AppError(`Failed to create book: ${error.message}`, 500));
   }
 });
@@ -226,12 +266,16 @@ exports.updateBook = catchAsync(async (req, res, next) => {
 
   // Validate ObjectId
   if (!mongoose.Types.ObjectId.isValid(id)) {
+    logger.error('Invalid book ID', { id });
     return next(new AppError("Invalid book ID", 400));
   }
 
   // Find the existing book
   const book = await Book.findById(id);
-  if (!book) return next(new AppError("No book found with that ID", 404));
+  if (!book) {
+    logger.error('No book found with that ID', { id });
+    return next(new AppError("No book found with that ID", 404));
+  }
 
   // Prepare updated data
   const updateData = { ...req.body };
@@ -264,6 +308,10 @@ exports.updateBook = catchAsync(async (req, res, next) => {
       if (newImageKey) {
         await deleteImage(newImageKey);
       }
+      logger.error('Failed to update book', {
+        bookId: id,
+        updateData
+      });
       return next(new AppError("Failed to update book", 500));
     }
 
@@ -273,10 +321,15 @@ exports.updateBook = catchAsync(async (req, res, next) => {
         const oldImageKey = book.imageUrls[0].split(".com/")[1];
         await deleteImage(oldImageKey);
       } catch (error) {
-        console.error("Error deleting old image", error);
+        logger.error("Error deleting old image", error);
         // Don't fail the request if old image deletion fails
       }
     }
+
+    logger.info('Book updated successfully', {
+      bookId: updatedBook._id,
+      title: updatedBook.title
+    });
 
     res.status(200).json({
       status: "success",
@@ -290,24 +343,44 @@ exports.updateBook = catchAsync(async (req, res, next) => {
       try {
         await deleteImage(newImageKey);
       } catch (deleteError) {
-        console.error(
+        logger.error(
           "Error deleting new image after update failure",
           deleteError
         );
       }
     }
 
+    logger.error('Error updating book', {
+      error: error.message,
+      stack: error.stack,
+      bookId: id,
+      updateData
+    });
     next(new AppError(error.message || "Failed to update book", 500));
   }
 });
 
 exports.updateBookQuantities = catchAsync(async (req, res, next) => {
+  logger.info('Updating book quantities', { 
+    updates: req.body
+  });
+
   // Validate the updates
   const updates = req.body;
   const validFields = ["availableQuantity", "reserved", "inTransit", "noOfLostBook"];
   
+  const invalidFields = Object.keys(updates).filter(field => !validFields.includes(field));
+  if (invalidFields.length > 0) {
+    logger.error('Invalid fields in book quantity update', {
+      invalidFields,
+      providedUpdates: updates
+    });
+    return next(new AppError(`Invalid fields: ${invalidFields.join(', ')}`, 400));
+  }
+
   const book = await Book.findById(req.params.id);
   if (!book) {
+    logger.error('Book not found', { id: req.params.id });
     return next(new AppError("Book not found", 404));
   }
 
@@ -324,6 +397,10 @@ exports.updateBookQuantities = catchAsync(async (req, res, next) => {
   const newTotal = newQuantities.availableQuantity + newQuantities.reserved + newQuantities.inTransit + newQuantities.noOfLostBook;
 
   if (newTotal > totalQuantity) {
+    logger.error('Total quantity exceeded', {
+      totalQuantity,
+      newTotal
+    });
     return next(
       new AppError(
         `Total quantity (${totalQuantity}) would be exceeded. New total would be ${newTotal}`,
@@ -334,6 +411,9 @@ exports.updateBookQuantities = catchAsync(async (req, res, next) => {
 
   // Validate available quantity is not negative
   if (newQuantities.availableQuantity < 0) {
+    logger.error('Available quantity is negative', {
+      availableQuantity: newQuantities.availableQuantity
+    });
     return next(
       new AppError(
         `Available quantity cannot be negative. New value would be ${newQuantities.availableQuantity}`,
@@ -345,6 +425,11 @@ exports.updateBookQuantities = catchAsync(async (req, res, next) => {
   // Apply updates
   Object.assign(book, newQuantities);
   await book.save();
+
+  logger.info('Book quantities updated successfully', {
+    bookId: book._id,
+    updates
+  });
 
   res.status(200).json({
     status: "success",
