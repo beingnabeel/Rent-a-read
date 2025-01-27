@@ -32,6 +32,12 @@ const pdfUpload = multer({
   { name: "thumbnailUrl", maxCount: 1 },
 ]);
 
+const profileUpload = multer({
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit for profile images
+  },
+}).single("file"); // Changed to 'file' to match the form data
+
 // Get service URLs from environment variables with fallbacks
 const BOOK_SERVICE_URL =
   process.env.BOOKS_SERVICE_URL || "http://localhost:4001";
@@ -67,7 +73,16 @@ const userServiceProxy = createProxyMiddleware({
     "^/api/v1/permissions": "/permissions",
   },
   onProxyReq: function (proxyReq, req, res) {
-    if (req.body) {
+    // For multipart/form-data, preserve the original headers and body
+    if (req.is("multipart/form-data")) {
+      console.log("Handling multipart form data");
+      proxyReq.setHeader("content-type", req.headers["content-type"]);
+      proxyReq.setHeader("content-length", req.headers["content-length"]);
+      return;
+    }
+
+    // For JSON requests
+    if (req.body && Object.keys(req.body).length > 0) {
       const bodyData = JSON.stringify(req.body);
       proxyReq.setHeader("Content-Type", "application/json");
       proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
@@ -237,6 +252,19 @@ router.use("/api/v1/auth", userServiceProxy);
 
 // Protected Routes
 router.use(
+  "/api/v1/users",
+  verifyToken,
+  (req, res, next) => {
+    // Skip JSON body parsing for multipart requests
+    if (req.is("multipart/form-data")) {
+      return next();
+    }
+    next();
+  },
+  userServiceProxy
+);
+
+router.use(
   "/api/v1/books",
   verifyToken,
   authorizePermissions(["Read_Data"]),
@@ -353,7 +381,9 @@ router.use(
     "/api/v1/users/:id",
     "/api/v1/users/:id/profiles/:profileId/addresses",
     "/api/v1/users/addresses",
-    "/api/v1/users/pincodes",
+    "/api/v1/users/addressess/:id",
+    "/api/v1/users/delete/addresses/:id",
+    "/api/v1/users/pincodes/:id",
     "/api/v1/users/:userId/addresses",
   ],
   verifyToken,
@@ -393,10 +423,15 @@ router.use(
 // User Profile Routes
 router.use(
   [
-    "api/v1/users/profiles/:id",
+    "/api/v1/users/profiles/:id",
     "/api/v1/users/profiles",
     "/api/v1/users/:userId/profiles",
-    "/api/v1/users/switch/profiles",
+    "/api/v1/users/switch/profiles/:id",
+    "/api/v1/users/delete/profileImage",
+    "/api/v1/users/email/generate-otp",
+    "/api/v1/users/email/verify-otp",
+    "/api/v1/users/update-password",
+    "/api/v1/users/timeframe",
   ],
   verifyToken,
   (req, res, next) => {
@@ -405,14 +440,27 @@ router.use(
 
     if (method === "GET") permissions.push("Read_Data");
     if (method === "POST" || method === "PUT") permissions.push("Write_Data");
+    if (method === "DELETE") permissions.push("Delete_Data");
 
-    authorizeRoles(["ROLE_ADMIN", "ROLE_SCHOOL_ADMIN", "ROLE_STUDENT"])(
-      req,
-      res,
-      () => {
-        authorizePermissions(permissions)(req, res, next);
-      }
-    );
+    authorizeRoles(["ADMIN", "SCHOOL_ADMIN", "STUDENT"])(req, res, () => {
+      authorizePermissions(permissions)(req, res, next);
+    });
+  },
+  userServiceProxy
+);
+
+// File upload route
+router.post(
+  "/api/v1/users/upload",
+  verifyToken,
+  authorizePermissions(["Write_Data"]),
+  profileUpload,
+  (req, res, next) => {
+    console.log("Processing file upload request");
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    next();
   },
   userServiceProxy
 );

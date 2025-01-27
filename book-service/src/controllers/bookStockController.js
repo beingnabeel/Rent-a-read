@@ -11,24 +11,24 @@ exports.addBookToSchool = catchAsync(async (req, res, next) => {
   const { bookId, schoolId } = req.params;
   const { totalQuantity } = req.body;
 
-  logger.info('Adding book to school', {
+  logger.info("Adding book to school", {
     bookId,
     schoolId,
-    totalQuantity
+    totalQuantity,
   });
 
   try {
     // 1. Check if book exists
     const book = await Book.findById(bookId);
     if (!book) {
-      logger.error('Book not found during school assignment', { bookId });
+      logger.error("Book not found during school assignment", { bookId });
       return next(new AppError("Book not found", 404));
     }
 
     // 2. Check if bookQuantity exists
     const bookQuantity = await BookQuantity.findByBookId(bookId);
     if (!bookQuantity) {
-      logger.error('Book quantity record not found', { bookId });
+      logger.error("Book quantity record not found", { bookId });
       return next(new AppError("Book quantity record not found", 404));
     }
 
@@ -40,10 +40,10 @@ exports.addBookToSchool = catchAsync(async (req, res, next) => {
     });
 
     if (existingSchoolBook) {
-      logger.error('Book already assigned to school', {
+      logger.error("Book already assigned to school", {
         bookId,
         schoolId,
-        existingRecord: existingSchoolBook._id
+        existingRecord: existingSchoolBook._id,
       });
       return next(new AppError("Book is already assigned to this school", 400));
     }
@@ -55,11 +55,11 @@ exports.addBookToSchool = catchAsync(async (req, res, next) => {
     );
 
     if (currentAvailableQuantity < totalQuantity) {
-      logger.error('Insufficient quantity for school assignment', {
+      logger.error("Insufficient quantity for school assignment", {
         bookId,
         schoolId,
         requested: totalQuantity,
-        available: currentAvailableQuantity
+        available: currentAvailableQuantity,
       });
       return next(
         new AppError(
@@ -108,18 +108,18 @@ exports.addBookToSchool = catchAsync(async (req, res, next) => {
     await newSchoolBookQuantity.save();
 
     if (!updatedBook || !updatedBookQuantity) {
-      logger.error('Failed to update quantities', {
+      logger.error("Failed to update quantities", {
         bookId,
         schoolId,
-        totalQuantity
+        totalQuantity,
       });
       return next(new AppError("Failed to update quantities", 500));
     }
 
-    logger.info('Book added to school successfully', {
+    logger.info("Book added to school successfully", {
       bookId,
       schoolId,
-      totalQuantity
+      totalQuantity,
     });
 
     res.status(201).json({
@@ -131,12 +131,12 @@ exports.addBookToSchool = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error adding book to school', {
+    logger.error("Error adding book to school", {
       error: error.message,
       stack: error.stack,
       bookId,
       schoolId,
-      totalQuantity
+      totalQuantity,
     });
     return next(
       new AppError(
@@ -151,22 +151,22 @@ exports.updateTotalQuantity = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { totalQuantity: newTotalQuantity } = req.body;
 
-  logger.info('Updating total quantity', {
+  logger.info("Updating total quantity", {
     schoolBookId: id,
-    newTotalQuantity
+    newTotalQuantity,
   });
 
   try {
     // Find the book and its quantity record
     const book = await Book.findById(id);
     if (!book) {
-      logger.error('Book not found', { id });
+      logger.error("Book not found", { id });
       return next(new AppError("Book not found", 404));
     }
 
     const bookQuantity = await BookQuantity.findByBookId(id);
     if (!bookQuantity) {
-      logger.error('Book quantity record not found', { id });
+      logger.error("Book quantity record not found", { id });
       return next(new AppError("Book quantity record not found", 404));
     }
 
@@ -188,18 +188,21 @@ exports.updateTotalQuantity = catchAsync(async (req, res, next) => {
 
     // Validate the new quantities
     if (newAvailableQuantity < 0) {
-      logger.error('Available quantity cannot be negative', {
+      logger.error("Available quantity cannot be negative", {
         schoolBookId: id,
-        newTotalQuantity
+        newTotalQuantity,
       });
       return next(new AppError("Available quantity cannot be negative", 400));
     }
 
     if (newAvailableQuantity + book.noOfLostBook > newTotalQuantity) {
-      logger.error('Sum of available and lost books cannot exceed total quantity', {
-        schoolBookId: id,
-        newTotalQuantity
-      });
+      logger.error(
+        "Sum of available and lost books cannot exceed total quantity",
+        {
+          schoolBookId: id,
+          newTotalQuantity,
+        }
+      );
       return next(
         new AppError(
           "Sum of available and lost books cannot exceed total quantity",
@@ -239,17 +242,17 @@ exports.updateTotalQuantity = catchAsync(async (req, res, next) => {
     );
 
     if (!updatedBook || !updatedBookQuantity) {
-      logger.error('Failed to update quantities', {
+      logger.error("Failed to update quantities", {
         schoolBookId: id,
-        newTotalQuantity
+        newTotalQuantity,
       });
       return next(new AppError("Failed to update quantities", 500));
     }
 
-    logger.info('Total quantity updated successfully', {
+    logger.info("Total quantity updated successfully", {
       schoolBookId: id,
       oldTotal: currentTotalQuantity,
-      newTotal: newTotalQuantity
+      newTotal: newTotalQuantity,
     });
 
     res.status(200).json({
@@ -260,11 +263,11 @@ exports.updateTotalQuantity = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating total quantity', {
+    logger.error("Error updating total quantity", {
       error: error.message,
       stack: error.stack,
       schoolBookId: id,
-      newTotalQuantity
+      newTotalQuantity,
     });
     return next(
       new AppError(error.message || "Failed to update quantities", 500)
@@ -276,29 +279,32 @@ exports.updateAvailableQuantity = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { availableQuantity } = req.body;
 
-  logger.info('Updating available quantity', {
+  logger.info("Updating available quantity", {
     schoolBookId: id,
-    availableQuantity
+    availableQuantity,
   });
 
   const book = await Book.findById(id);
   if (!book) {
-    logger.error('Book not found', { id });
+    logger.error("Book not found", { id });
     return next(new AppError("Book not found", 404));
   }
 
   const bookQuantity = await BookQuantity.findByBookId(id);
   if (!bookQuantity) {
-    logger.error('Book quantity record not found', { id });
+    logger.error("Book quantity record not found", { id });
     return next(new AppError("Book quantity record not found", 404));
   }
 
   // Validate available quantity
   if (availableQuantity + book.noOfLostBook > book.totalQuantity) {
-    logger.error('Available quantity plus lost books cannot exceed total quantity', {
-      schoolBookId: id,
-      availableQuantity
-    });
+    logger.error(
+      "Available quantity plus lost books cannot exceed total quantity",
+      {
+        schoolBookId: id,
+        availableQuantity,
+      }
+    );
     return next(
       new AppError(
         "Available quantity plus lost books cannot exceed total quantity",
@@ -316,9 +322,9 @@ exports.updateAvailableQuantity = catchAsync(async (req, res, next) => {
     bookQuantity.availableQuantity = availableQuantity;
     await bookQuantity.save();
 
-    logger.info('Available quantity updated successfully', {
+    logger.info("Available quantity updated successfully", {
       schoolBookId: id,
-      availableQuantity
+      availableQuantity,
     });
 
     res.status(200).json({
@@ -329,11 +335,11 @@ exports.updateAvailableQuantity = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating available quantity', {
+    logger.error("Error updating available quantity", {
       error: error.message,
       stack: error.stack,
       schoolBookId: id,
-      availableQuantity
+      availableQuantity,
     });
     return next(
       new AppError(`Failed to update available quantity: ${error.message}`, 500)
@@ -345,24 +351,24 @@ exports.updateNoOfLostBook = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { noOfLostBook: newNoOfLostBook } = req.body;
 
-  logger.info('Updating number of lost books', {
+  logger.info("Updating number of lost books", {
     schoolBookId: id,
-    newNoOfLostBook
+    newNoOfLostBook,
   });
 
   try {
     // Find the book
     const book = await Book.findById(id);
     if (!book) {
-      logger.error('Book not found', { id });
+      logger.error("Book not found", { id });
       return next(new AppError("Book not found", 404));
     }
 
     // Validate the new noOfLostBook value
     if (newNoOfLostBook > book.totalQuantity) {
-      logger.error('Number of lost books cannot exceed total quantity', {
+      logger.error("Number of lost books cannot exceed total quantity", {
         schoolBookId: id,
-        newNoOfLostBook
+        newNoOfLostBook,
       });
       return next(
         new AppError("Number of lost books cannot exceed total quantity", 400)
@@ -371,10 +377,13 @@ exports.updateNoOfLostBook = catchAsync(async (req, res, next) => {
 
     // New validation: Check if noOfLostBook + availableQuantity <= totalQuantity
     if (newNoOfLostBook + book.availableQuantity > book.totalQuantity) {
-      logger.error('Sum of lost books and available quantity cannot exceed total quantity', {
-        schoolBookId: id,
-        newNoOfLostBook
-      });
+      logger.error(
+        "Sum of lost books and available quantity cannot exceed total quantity",
+        {
+          schoolBookId: id,
+          newNoOfLostBook,
+        }
+      );
       return next(
         new AppError(
           "Sum of lost books and available quantity cannot exceed total quantity",
@@ -398,16 +407,16 @@ exports.updateNoOfLostBook = catchAsync(async (req, res, next) => {
     );
 
     if (!updatedBook) {
-      logger.error('Failed to update lost books quantity', {
+      logger.error("Failed to update lost books quantity", {
         schoolBookId: id,
-        newNoOfLostBook
+        newNoOfLostBook,
       });
       return next(new AppError("Failed to update lost books quantity", 500));
     }
 
-    logger.info('Number of lost books updated successfully', {
+    logger.info("Number of lost books updated successfully", {
       schoolBookId: id,
-      newNoOfLostBook
+      newNoOfLostBook,
     });
 
     res.status(200).json({
@@ -417,11 +426,11 @@ exports.updateNoOfLostBook = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating number of lost books', {
+    logger.error("Error updating number of lost books", {
       error: error.message,
       stack: error.stack,
       schoolBookId: id,
-      newNoOfLostBook
+      newNoOfLostBook,
     });
     return next(
       new AppError(error.message || "Failed to update lost books quantity", 500)
@@ -433,10 +442,10 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
   const { bookId, schoolId } = req.params;
   const { totalQuantity: newTotalQuantity } = req.body;
 
-  logger.info('Updating school book total quantity', {
+  logger.info("Updating school book total quantity", {
     bookId,
     schoolId,
-    newTotalQuantity
+    newTotalQuantity,
   });
 
   // Find the schoolBookQuantity document
@@ -446,9 +455,9 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
   );
 
   if (!schoolBookQuantity) {
-    logger.error('School book quantity record not found', {
+    logger.error("School book quantity record not found", {
       bookId,
-      schoolId
+      schoolId,
     });
     return next(new AppError("School book quantity record not found", 404));
   }
@@ -456,13 +465,13 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
   // Find the book and bookQuantity documents
   const book = await Book.findById(bookId);
   if (!book) {
-    logger.error('Book not found', { bookId });
+    logger.error("Book not found", { bookId });
     return next(new AppError("Book not found", 404));
   }
 
   const bookQuantity = await BookQuantity.findByBookId(bookId);
   if (!bookQuantity) {
-    logger.error('Book quantity record not found', { bookId });
+    logger.error("Book quantity record not found", { bookId });
     return next(new AppError("Book quantity record not found", 404));
   }
 
@@ -474,11 +483,11 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
     const availableInStock = book.totalQuantity - book.availableQuantity;
 
     if (quantityDifference > book.availableQuantity) {
-      logger.error('Cannot add books. Insufficient quantity in library stock', {
+      logger.error("Cannot add books. Insufficient quantity in library stock", {
         bookId,
         schoolId,
         requested: quantityDifference,
-        available: book.availableQuantity
+        available: book.availableQuantity,
       });
       return next(
         new AppError(
@@ -501,12 +510,15 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
     const decreaseAmount = Math.abs(quantityDifference);
 
     if (decreaseAmount > schoolBookQuantity.availableQuantity) {
-      logger.error('Cannot remove books. Insufficient quantity in school stock', {
-        bookId,
-        schoolId,
-        requested: decreaseAmount,
-        available: schoolBookQuantity.availableQuantity
-      });
+      logger.error(
+        "Cannot remove books. Insufficient quantity in school stock",
+        {
+          bookId,
+          schoolId,
+          requested: decreaseAmount,
+          available: schoolBookQuantity.availableQuantity,
+        }
+      );
       return next(
         new AppError(
           `Cannot remove ${decreaseAmount} books. Only ${schoolBookQuantity.availableQuantity} books available in school stock.`,
@@ -532,10 +544,10 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
       bookQuantity.save(),
     ]);
 
-    logger.info('School book total quantity updated successfully', {
+    logger.info("School book total quantity updated successfully", {
       bookId,
       schoolId,
-      newTotalQuantity
+      newTotalQuantity,
     });
 
     res.status(200).json({
@@ -547,12 +559,12 @@ exports.updateSchoolBookTotalQuantity = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating school book total quantity', {
+    logger.error("Error updating school book total quantity", {
       error: error.message,
       stack: error.stack,
       bookId,
       schoolId,
-      newTotalQuantity
+      newTotalQuantity,
     });
     return next(
       new AppError(
@@ -568,10 +580,10 @@ exports.updateSchoolBookAvailableQuantity = catchAsync(
     const { bookId, schoolId } = req.params;
     const { availableQuantity: newAvailableQuantity } = req.body;
 
-    logger.info('Updating school book available quantity', {
+    logger.info("Updating school book available quantity", {
       bookId,
       schoolId,
-      newAvailableQuantity
+      newAvailableQuantity,
     });
 
     // Find the schoolBookQuantity document
@@ -581,19 +593,19 @@ exports.updateSchoolBookAvailableQuantity = catchAsync(
     );
 
     if (!schoolBookQuantity) {
-      logger.error('School book quantity record not found', {
+      logger.error("School book quantity record not found", {
         bookId,
-        schoolId
+        schoolId,
       });
       return next(new AppError("School book quantity record not found", 404));
     }
 
     // Validate that new available quantity doesn't exceed total quantity
     if (newAvailableQuantity > schoolBookQuantity.totalQuantity) {
-      logger.error('Available quantity cannot exceed total quantity', {
+      logger.error("Available quantity cannot exceed total quantity", {
         bookId,
         schoolId,
-        newAvailableQuantity
+        newAvailableQuantity,
       });
       return next(
         new AppError(
@@ -612,10 +624,10 @@ exports.updateSchoolBookAvailableQuantity = catchAsync(
       schoolBookQuantity.availableQuantity = newAvailableQuantity;
       await schoolBookQuantity.save();
 
-      logger.info('School book available quantity updated successfully', {
+      logger.info("School book available quantity updated successfully", {
         bookId,
         schoolId,
-        newAvailableQuantity
+        newAvailableQuantity,
       });
 
       res.status(200).json({
@@ -625,12 +637,12 @@ exports.updateSchoolBookAvailableQuantity = catchAsync(
         },
       });
     } catch (error) {
-      logger.error('Error updating school book available quantity', {
+      logger.error("Error updating school book available quantity", {
         error: error.message,
         stack: error.stack,
         bookId,
         schoolId,
-        newAvailableQuantity
+        newAvailableQuantity,
       });
       return next(
         new AppError(
@@ -645,9 +657,9 @@ exports.updateSchoolBookAvailableQuantity = catchAsync(
 exports.deleteSchoolBook = catchAsync(async (req, res, next) => {
   const { bookId, schoolId } = req.params;
 
-  logger.info('Deleting school book', {
+  logger.info("Deleting school book", {
     bookId,
-    schoolId
+    schoolId,
   });
 
   try {
@@ -658,17 +670,17 @@ exports.deleteSchoolBook = catchAsync(async (req, res, next) => {
     );
 
     if (!schoolBookQuantity) {
-      logger.error('School book quantity record not found', {
+      logger.error("School book quantity record not found", {
         bookId,
-        schoolId
+        schoolId,
       });
       return next(new AppError("School book quantity record not found", 404));
     }
 
     if (schoolBookQuantity.isDeleted) {
-      logger.error('School book is already deleted', {
+      logger.error("School book is already deleted", {
         bookId,
-        schoolId
+        schoolId,
       });
       return next(new AppError("School book is already deleted", 400));
     }
@@ -689,9 +701,9 @@ exports.deleteSchoolBook = catchAsync(async (req, res, next) => {
     );
 
     if (!updatedBook) {
-      logger.error('Failed to update book quantity', {
+      logger.error("Failed to update book quantity", {
         bookId,
-        schoolId
+        schoolId,
       });
       return next(new AppError("Failed to update book quantity", 500));
     }
@@ -716,9 +728,9 @@ exports.deleteSchoolBook = catchAsync(async (req, res, next) => {
           $inc: { availableQuantity: -quantityToReturn },
         }
       );
-      logger.error('Failed to update book quantity record', {
+      logger.error("Failed to update book quantity record", {
         bookId,
-        schoolId
+        schoolId,
       });
       return next(new AppError("Failed to update book quantity record", 500));
     }
@@ -727,19 +739,19 @@ exports.deleteSchoolBook = catchAsync(async (req, res, next) => {
     schoolBookQuantity.isDeleted = true;
     await schoolBookQuantity.save();
 
-    logger.info('School book deleted successfully', {
+    logger.info("School book deleted successfully", {
       bookId,
-      schoolId
+      schoolId,
     });
 
     // If everything succeeded, send 204 response
     res.status(204).send();
   } catch (error) {
-    logger.error('Error deleting school book', {
+    logger.error("Error deleting school book", {
       error: error.message,
       stack: error.stack,
       bookId,
-      schoolId
+      schoolId,
     });
     return next(
       new AppError(`Failed to delete school book: ${error.message}`, 500)
@@ -752,27 +764,27 @@ exports.deleteSchoolBook = catchAsync(async (req, res, next) => {
 exports.getSchoolBookQuantity = catchAsync(async (req, res, next) => {
   const { bookId, schoolId } = req.params;
 
-  logger.info('Fetching school book quantity', {
+  logger.info("Fetching school book quantity", {
     bookId,
-    schoolId
+    schoolId,
   });
 
   // Validate bookId format
   if (!mongoose.Types.ObjectId.isValid(bookId)) {
-    logger.error('Invalid book ID format', { bookId });
+    logger.error("Invalid book ID format", { bookId });
     return next(new AppError("Invalid book ID format", 400));
   }
 
   // Validate schoolId format
   if (!mongoose.Types.ObjectId.isValid(schoolId)) {
-    logger.error('Invalid school ID format', { schoolId });
+    logger.error("Invalid school ID format", { schoolId });
     return next(new AppError("Invalid school ID format", 400));
   }
 
   // Check if book exists
   const book = await Book.findById(bookId);
   if (!book) {
-    logger.error('Book not found', { bookId });
+    logger.error("Book not found", { bookId });
     return next(new AppError("Book not found", 404));
   }
 
@@ -784,9 +796,9 @@ exports.getSchoolBookQuantity = catchAsync(async (req, res, next) => {
 
   // If no record found, return message only
   if (!schoolBookQuantity) {
-    logger.info('No school book quantity record found', {
+    logger.info("No school book quantity record found", {
       bookId,
-      schoolId
+      schoolId,
     });
     return res.status(404).json({
       status: "fail",
@@ -794,9 +806,9 @@ exports.getSchoolBookQuantity = catchAsync(async (req, res, next) => {
     });
   }
 
-  logger.info('School book quantity fetched successfully', {
+  logger.info("School book quantity fetched successfully", {
     bookId,
-    schoolId
+    schoolId,
   });
 
   // Return the found document
@@ -809,10 +821,10 @@ exports.getSchoolBookQuantity = catchAsync(async (req, res, next) => {
 });
 
 exports.getAllSchoolBooks = catchAsync(async (req, res, next) => {
-  logger.info('Fetching all school books', {
+  logger.info("Fetching all school books", {
     query: req.query,
     page: req.query.page || 1,
-    limit: req.query.limit || 10
+    limit: req.query.limit || 10,
   });
 
   try {
@@ -843,10 +855,10 @@ exports.getAllSchoolBooks = catchAsync(async (req, res, next) => {
     });
 
     if (!schoolBooks) {
-      logger.info('No school books found', {
+      logger.info("No school books found", {
         query: req.query,
         page,
-        limit
+        limit,
       });
       return res.status(200).json({
         data: [],
@@ -864,11 +876,11 @@ exports.getAllSchoolBooks = catchAsync(async (req, res, next) => {
     const totalPages = Math.ceil(totalDocuments / limit);
     const numberOfDocuments = schoolBooks.length;
 
-    logger.info('School books fetched successfully', {
+    logger.info("School books fetched successfully", {
       count: schoolBooks.length,
       totalDocuments,
       page,
-      limit
+      limit,
     });
 
     // Send response
@@ -886,10 +898,10 @@ exports.getAllSchoolBooks = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error fetching school books', {
+    logger.error("Error fetching school books", {
       error: error.message,
       stack: error.stack,
-      query: req.query
+      query: req.query,
     });
     return next(
       new AppError(`Failed to fetch school books: ${error.message}`, 500)
@@ -901,37 +913,40 @@ exports.updateReservedQuantity = catchAsync(async (req, res, next) => {
   const { id } = req.params;
   const { reserved } = req.body;
 
-  logger.info('Updating reserved quantity', {
+  logger.info("Updating reserved quantity", {
     schoolBookId: id,
-    reserved
+    reserved,
   });
 
   const book = await Book.findById(id);
   if (!book) {
-    logger.error('Book not found', { id });
+    logger.error("Book not found", { id });
     return next(new AppError("Book not found", 404));
   }
 
   const bookQuantity = await BookQuantity.findByBookId(id);
   if (!bookQuantity) {
-    logger.error('Book quantity record not found', { id });
+    logger.error("Book quantity record not found", { id });
     return next(new AppError("Book quantity record not found", 404));
   }
 
   // Validate reserved quantity
   if (reserved < 0) {
-    logger.error('Reserved quantity cannot be negative', {
+    logger.error("Reserved quantity cannot be negative", {
       schoolBookId: id,
-      reserved
+      reserved,
     });
     return next(new AppError("Reserved quantity cannot be negative", 400));
   }
 
   if (reserved + book.noOfLostBook > book.totalQuantity) {
-    logger.error('Reserved quantity plus lost books cannot exceed total quantity', {
-      schoolBookId: id,
-      reserved
-    });
+    logger.error(
+      "Reserved quantity plus lost books cannot exceed total quantity",
+      {
+        schoolBookId: id,
+        reserved,
+      }
+    );
     return next(
       new AppError(
         "Reserved quantity plus lost books cannot exceed total quantity",
@@ -949,9 +964,9 @@ exports.updateReservedQuantity = catchAsync(async (req, res, next) => {
     bookQuantity.reserved = reserved;
     await bookQuantity.save();
 
-    logger.info('Reserved quantity updated successfully', {
+    logger.info("Reserved quantity updated successfully", {
       schoolBookId: id,
-      reserved
+      reserved,
     });
 
     res.status(200).json({
@@ -962,11 +977,11 @@ exports.updateReservedQuantity = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating reserved quantity', {
+    logger.error("Error updating reserved quantity", {
       error: error.message,
       stack: error.stack,
       schoolBookId: id,
-      reserved
+      reserved,
     });
     return next(
       new AppError(`Failed to update reserved quantity: ${error.message}`, 500)
