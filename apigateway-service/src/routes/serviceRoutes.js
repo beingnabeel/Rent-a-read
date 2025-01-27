@@ -123,6 +123,8 @@ const orderServiceProxy = createProxyMiddleware({
     "^/api/v1/order-service/carts": "/api/v1/order-service/carts",
     "^/api/v1/order-service/delivery-plans":
       "/api/v1/order-service/delivery-plans",
+    "^/api/v1/order-service/student-stock-management-profiles":
+      "/api/v1/order-service/student-stock-management-profiles",
   },
   onProxyReq: function (proxyReq, req, res) {
     console.log("Proxying to:", proxyReq.path);
@@ -348,6 +350,7 @@ router.use(
 // User Address Routes
 router.use(
   [
+    "/api/v1/users/:id",
     "/api/v1/users/:id/profiles/:profileId/addresses",
     "/api/v1/users/addresses",
     "/api/v1/users/pincodes",
@@ -400,16 +403,16 @@ router.use(
     const method = req.method;
     const permissions = [];
 
-    // if (method === "GET") permissions.push("Read_Data");
-    // if (method === "POST" || method === "PUT") permissions.push("Write_Data");
+    if (method === "GET") permissions.push("Read_Data");
+    if (method === "POST" || method === "PUT") permissions.push("Write_Data");
 
-    // authorizeRoles(["ROLE_ADMIN", "ROLE_SCHOOL_ADMIN", "ROLE_STUDENT"])(
-    //   req,
-    //   res,
-    //   () => {
-    //     authorizePermissions(permissions)(req, res, next);
-    //   }
-    // );
+    authorizeRoles(["ROLE_ADMIN", "ROLE_SCHOOL_ADMIN", "ROLE_STUDENT"])(
+      req,
+      res,
+      () => {
+        authorizePermissions(permissions)(req, res, next);
+      }
+    );
   },
   userServiceProxy
 );
@@ -1135,6 +1138,21 @@ router.get(
   schoolServiceProxy
 );
 
+router.get(
+  "/api/v1/schools-service/school-admin/profiles/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
+);
+
+router.get(
+  "/api/v1/schools-service/school-admin/documents/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  schoolServiceProxy
+);
 // Cart Routes with Role-Based Access Control
 router.post(
   "/api/v1/order-service/carts",
@@ -1341,4 +1359,27 @@ router.get(
   orderServiceProxy
 );
 
+router.get(
+  "/api/v1/order-service/orders/user/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/student-stock-management-profiles",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
+
+router.get(
+  "/api/v1/order-service/student-stock-management-profiles/user/:id",
+  verifyToken,
+  authorizeRoles(["ADMIN", "STUDENT", "SCHOOL_ADMIN"]),
+  authorizePermissions(["Read_Data", "Write_Data", "Delete_Data"]),
+  orderServiceProxy
+);
 module.exports = router;
