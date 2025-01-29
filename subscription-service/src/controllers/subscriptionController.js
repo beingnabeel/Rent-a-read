@@ -96,18 +96,18 @@ exports.getSubscriptionByUserId = catchAsync(async (req, res, next) => {
   const { userId } = req.params;
 
   const subscription = await Subscription.findOne({ userId })
-    .populate('planFrequencyTypeId')
-    .populate('planOptionTypeId');
+    .populate("planFrequencyTypeId")
+    .populate("planOptionTypeId");
 
   if (!subscription) {
-    return next(new AppError('No subscription found for this user', 404));
+    return next(new AppError("No subscription found for this user", 404));
   }
 
   res.status(200).json({
-    status: 'success',
+    status: "success",
     data: {
-      subscription
-    }
+      subscription,
+    },
   });
 });
 

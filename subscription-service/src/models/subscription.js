@@ -107,7 +107,3 @@ subscriptionSchema.pre(/^find/, function (next) {
 
 const Subscription = mongoose.model("Subscription", subscriptionSchema);
 module.exports = Subscription;
-
-//"stripeSubscriptionId": "sub_1QZVF0LhGJLAbdUg3GJ1ZJ5r"
-//"stripePaymentIntentId": "pi_3QZVF0LhGJLAbdUg0ylnrfDA"
-// "stripeClientSecret": "pi_3QZVF0LhGJLAbdUg0ylnrfDA_secret_eDXoaZhBJ528zZsUSFpWfSVr2"
