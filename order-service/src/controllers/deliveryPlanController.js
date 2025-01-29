@@ -38,6 +38,16 @@ const getUserFromProfile = async (profileId, authToken) => {
       throw new AppError("Profile does not contain a userId", 400);
     }
 
+    // Get the requesting user's ID from the JWT token
+    const token = authToken.split(" ")[1];
+    const decodedToken = require("jsonwebtoken").decode(token);
+    const requestingUserId = decodedToken.userId;
+
+    // Check if the profile belongs to the requesting user or if the user is an ADMIN
+    if (profile.userId !== requestingUserId && decodedToken.role !== "ADMIN") {
+      throw new AppError("You are not authorized to access this profile", 403);
+    }
+
     return profile;
   } catch (error) {
     console.error(
@@ -119,7 +129,7 @@ const getSchoolAddress = async (schoolId, authToken) => {
     );
 
     const school = response.data?.data?.school || response.data;
-    
+
     if (!school) {
       throw new AppError("School not found", 404);
     }
@@ -135,14 +145,17 @@ const getSchoolAddress = async (schoolId, authToken) => {
     }
 
     // Concatenate address fields
-    const deliveryAddress = `${school.name}, ${school.branch}, ${school.address}, ${school.pincode}`.replace(/,\s*,/g, ',').trim();
-    
+    const deliveryAddress =
+      `${school.name}, ${school.branch}, ${school.address}, ${school.pincode}`
+        .replace(/,\s*,/g, ",")
+        .trim();
+
     console.log("Constructed delivery address:", deliveryAddress);
-    
+
     return {
       address: deliveryAddress,
       weekDay: school.weekDay,
-      stockManagementAllowed: school.stockManagementAllowed
+      stockManagementAllowed: school.stockManagementAllowed,
     };
   } catch (error) {
     console.error("School fetch error:", error.response?.data || error.message);
@@ -195,15 +208,15 @@ const validateSubscription = async (subscriptionId, userId, authToken) => {
     const endDate = new Date(subscription.endDate);
 
     if (currentDate < startDate || currentDate > endDate) {
-      throw new AppError(
-        "Subscription is not within valid date range",
-        400
-      );
+      throw new AppError("Subscription is not within valid date range", 400);
     }
 
     return subscription;
   } catch (error) {
-    console.error("Subscription validation error:", error.response?.data || error.message);
+    console.error(
+      "Subscription validation error:",
+      error.response?.data || error.message
+    );
     if (error instanceof AppError) {
       throw error;
     }
@@ -215,9 +228,113 @@ const validateSubscription = async (subscriptionId, userId, authToken) => {
 };
 
 // Create delivery plan
+// exports.createDeliveryPlan = catchAsync(async (req, res, next) => {
+//   const {
+//     profileId,
+//     subscriptionId,
+//     deliveryDay,
+//     deliveryNotes,
+//     deliveryAddress,
+//   } = req.body;
+//   const authToken = req.headers.authorization;
+
+//   // Get user profile
+//   const userProfile = await getUserFromProfile(profileId, authToken);
+//   if (!userProfile) {
+//     return next(new AppError("User profile not found", 404));
+//   }
+
+//   // Validate subscription
+//   const subscription = await validateSubscription(
+//     subscriptionId,
+//     userProfile.userId,
+//     authToken
+//   );
+
+//   let finalDeliveryAddress = deliveryAddress;
+//   let finalDeliveryDay = deliveryDay;
+//   let schoolDetails = null;
+
+//   // If schoolId exists, try to get school address and details
+//   if (userProfile.schoolId) {
+//     try {
+//       schoolDetails = await getSchoolAddress(userProfile.schoolId, authToken);
+//       if (schoolDetails.stockManagementAllowed) {
+//         // If stock management is enabled, use school's weekDay
+//         finalDeliveryDay = schoolDetails.weekDay;
+//         finalDeliveryAddress = schoolDetails.address;
+//       } else if (!deliveryAddress) {
+//         // If stock management is disabled and no address provided, try default address
+//         finalDeliveryAddress = await getDefaultAddress(
+//           userProfile.userId,
+//           authToken
+//         );
+//       }
+//     } catch (error) {
+//       // If error is due to stockManagementAllowed being false
+//       if (error.message.includes("stock management")) {
+//         if (!deliveryAddress) {
+//           // If no address provided in request, try to get default address
+//           finalDeliveryAddress = await getDefaultAddress(
+//             userProfile.userId,
+//             authToken
+//           );
+//         }
+//       } else {
+//         // For other errors, try getting default address
+//         finalDeliveryAddress = await getDefaultAddress(
+//           userProfile.userId,
+//           authToken
+//         );
+//       }
+//     }
+//   } else {
+//     // If no schoolId, get default address from user profile
+//     if (!deliveryAddress) {
+//       finalDeliveryAddress = await getDefaultAddress(
+//         userProfile.userId,
+//         authToken
+//       );
+//     }
+//   }
+
+//   if (!finalDeliveryAddress) {
+//     return next(new AppError("No delivery address available", 400));
+//   }
+
+//   if (!finalDeliveryDay) {
+//     return next(new AppError("Delivery day is required", 400));
+//   }
+
+//   const deliveryPlan = await DeliveryPlan.create({
+//     userId: userProfile.userId,
+//     subscriptionId,
+//     profileId,
+//     deliveryDay: finalDeliveryDay,
+//     deliveryAddress: finalDeliveryAddress,
+//     deliveryNotes,
+//   });
+
+//   res.status(201).json({
+//     status: "success",
+//     data: {
+//       deliveryPlan,
+//     },
+//   });
+// });
+
+// ----------------------------------------------updated code from claude-------------------------------------------
+// Helper functions remain the same until getSchoolAddress
+
+// Create delivery plan
 exports.createDeliveryPlan = catchAsync(async (req, res, next) => {
-  const { profileId, subscriptionId, deliveryDay, deliveryNotes, deliveryAddress } =
-    req.body;
+  const {
+    profileId,
+    subscriptionId,
+    deliveryDay,
+    deliveryNotes,
+    deliveryAddress,
+  } = req.body;
   const authToken = req.headers.authorization;
 
   // Get user profile
@@ -237,34 +354,44 @@ exports.createDeliveryPlan = catchAsync(async (req, res, next) => {
   let finalDeliveryDay = deliveryDay;
   let schoolDetails = null;
 
-  // If schoolId exists, try to get school address and details
-  if (userProfile.schoolId) {
-    try {
-      schoolDetails = await getSchoolAddress(userProfile.schoolId, authToken);
-      if (schoolDetails.stockManagementAllowed) {
-        // If stock management is enabled, use school's weekDay
-        finalDeliveryDay = schoolDetails.weekDay;
-        finalDeliveryAddress = schoolDetails.address;
-      } else if (!deliveryAddress) {
-        // If stock management is disabled and no address provided, try default address
-        finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
-      }
-    } catch (error) {
-      // If error is due to stockManagementAllowed being false
-      if (error.message.includes("stock management")) {
-        if (!deliveryAddress) {
-          // If no address provided in request, try to get default address
-          finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+  // Only proceed with address fetching if no delivery address was provided
+  if (!deliveryAddress) {
+    // If schoolId exists, try to get school address and details
+    if (userProfile.schoolId) {
+      try {
+        schoolDetails = await getSchoolAddress(userProfile.schoolId, authToken);
+        if (schoolDetails.stockManagementAllowed) {
+          // If stock management is enabled, use school's weekDay and address
+          finalDeliveryDay = schoolDetails.weekDay;
+          finalDeliveryAddress = schoolDetails.address;
+        } else {
+          // If stock management is disabled, use default address
+          finalDeliveryAddress = await getDefaultAddress(
+            userProfile.userId,
+            authToken
+          );
         }
-      } else {
-        // For other errors, try getting default address
-        finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+      } catch (error) {
+        // If error is due to stockManagementAllowed being false
+        if (error.message.includes("stock management")) {
+          finalDeliveryAddress = await getDefaultAddress(
+            userProfile.userId,
+            authToken
+          );
+        } else {
+          // For other errors, try getting default address
+          finalDeliveryAddress = await getDefaultAddress(
+            userProfile.userId,
+            authToken
+          );
+        }
       }
-    }
-  } else {
-    // If no schoolId, get default address from user profile
-    if (!deliveryAddress) {
-      finalDeliveryAddress = await getDefaultAddress(userProfile.userId, authToken);
+    } else {
+      // If no schoolId, get default address from user profile
+      finalDeliveryAddress = await getDefaultAddress(
+        userProfile.userId,
+        authToken
+      );
     }
   }
 
@@ -292,6 +419,85 @@ exports.createDeliveryPlan = catchAsync(async (req, res, next) => {
     },
   });
 });
+
+// Update delivery plan
+exports.updateDeliveryPlan = catchAsync(async (req, res, next) => {
+  const { deliveryDay, deliveryNotes, deliveryAddress } = req.body;
+  const authToken = req.headers.authorization;
+  const userId = req.user.userId;
+
+  // First find the delivery plan
+  const deliveryPlan = await DeliveryPlan.findById(req.params.id);
+  if (!deliveryPlan) {
+    return next(new AppError("No delivery plan found with that ID", 404));
+  }
+
+  // Verify ownership
+  if (deliveryPlan.userId.toString() !== userId) {
+    return next(
+      new AppError("You are not authorized to update this delivery plan", 403)
+    );
+  }
+
+  // Validate delivery day if it's being updated
+  if (deliveryDay) {
+    const validDays = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+    if (!validDays.includes(deliveryDay)) {
+      return next(new AppError("Invalid delivery day", 400));
+    }
+  }
+
+  try {
+    // Only fetch default address if no delivery address is provided in the request
+    let finalDeliveryAddress = deliveryAddress;
+    if (!deliveryAddress) {
+      finalDeliveryAddress = await getDefaultAddress(userId, authToken);
+    }
+
+    // Update delivery plan with new address and other fields
+    const updatedDeliveryPlan = await DeliveryPlan.findByIdAndUpdate(
+      req.params.id,
+      {
+        deliveryDay: deliveryDay || deliveryPlan.deliveryDay,
+        deliveryNotes: deliveryNotes || deliveryPlan.deliveryNotes,
+        deliveryAddress: finalDeliveryAddress,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    // Get subscription details
+    const subscription = await validateSubscription(
+      updatedDeliveryPlan.subscriptionId,
+      userId,
+      authToken
+    );
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        deliveryPlan: {
+          ...updatedDeliveryPlan.toObject(),
+          subscription,
+        },
+      },
+    });
+  } catch (error) {
+    return next(new AppError(error.message, error.statusCode || 500));
+  }
+});
+
+// --------------------------------------------------updated code from claude----------------------------------
 
 // Get all delivery plans
 exports.getAllDeliveryPlans = catchAsync(async (req, res, next) => {
@@ -356,90 +562,90 @@ exports.getDeliveryPlan = catchAsync(async (req, res, next) => {
   const deliveryPlan = await DeliveryPlan.findById(req.params.id);
 
   if (!deliveryPlan) {
-    return next(new AppError('No delivery plan found with that ID', 404));
+    return next(new AppError("No delivery plan found with that ID", 404));
   }
 
   res.status(200).json({
-    status: 'success',
+    status: "success",
     data: {
-      deliveryPlan
-    }
+      deliveryPlan,
+    },
   });
 });
 
 // Update delivery plan
-exports.updateDeliveryPlan = catchAsync(async (req, res, next) => {
-  const { deliveryDay, deliveryNotes } = req.body;
-  const authToken = req.headers.authorization;
-  const userId = req.user.userId;
+// exports.updateDeliveryPlan = catchAsync(async (req, res, next) => {
+//   const { deliveryDay, deliveryNotes } = req.body;
+//   const authToken = req.headers.authorization;
+//   const userId = req.user.userId;
 
-  // First find the delivery plan
-  const deliveryPlan = await DeliveryPlan.findById(req.params.id);
-  if (!deliveryPlan) {
-    return next(new AppError("No delivery plan found with that ID", 404));
-  }
+//   // First find the delivery plan
+//   const deliveryPlan = await DeliveryPlan.findById(req.params.id);
+//   if (!deliveryPlan) {
+//     return next(new AppError("No delivery plan found with that ID", 404));
+//   }
 
-  // Verify ownership
-  if (deliveryPlan.userId.toString() !== userId) {
-    return next(
-      new AppError("You are not authorized to update this delivery plan", 403)
-    );
-  }
+//   // Verify ownership
+//   if (deliveryPlan.userId.toString() !== userId) {
+//     return next(
+//       new AppError("You are not authorized to update this delivery plan", 403)
+//     );
+//   }
 
-  // Validate delivery day if it's being updated
-  if (deliveryDay) {
-    const validDays = [
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-      "Sunday",
-    ];
-    if (!validDays.includes(deliveryDay)) {
-      return next(new AppError("Invalid delivery day", 400));
-    }
-  }
+//   // Validate delivery day if it's being updated
+//   if (deliveryDay) {
+//     const validDays = [
+//       "Monday",
+//       "Tuesday",
+//       "Wednesday",
+//       "Thursday",
+//       "Friday",
+//       "Saturday",
+//       "Sunday",
+//     ];
+//     if (!validDays.includes(deliveryDay)) {
+//       return next(new AppError("Invalid delivery day", 400));
+//     }
+//   }
 
-  try {
-    // Get current default address
-    const deliveryAddress = await getDefaultAddress(userId, authToken);
+//   try {
+//     // Get current default address
+//     const deliveryAddress = await getDefaultAddress(userId, authToken);
 
-    // Update delivery plan with new address and other fields
-    const updatedDeliveryPlan = await DeliveryPlan.findByIdAndUpdate(
-      req.params.id,
-      {
-        deliveryDay: deliveryDay || deliveryPlan.deliveryDay,
-        deliveryNotes: deliveryNotes || deliveryPlan.deliveryNotes,
-        deliveryAddress: deliveryAddress, // Always update with current default address
-      },
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+//     // Update delivery plan with new address and other fields
+//     const updatedDeliveryPlan = await DeliveryPlan.findByIdAndUpdate(
+//       req.params.id,
+//       {
+//         deliveryDay: deliveryDay || deliveryPlan.deliveryDay,
+//         deliveryNotes: deliveryNotes || deliveryPlan.deliveryNotes,
+//         deliveryAddress: deliveryAddress, // Always update with current default address
+//       },
+//       {
+//         new: true,
+//         runValidators: true,
+//       }
+//     );
 
-    // Get subscription details
-    const subscription = await validateSubscription(
-      updatedDeliveryPlan.subscriptionId,
-      userId,
-      authToken
-    );
+//     // Get subscription details
+//     const subscription = await validateSubscription(
+//       updatedDeliveryPlan.subscriptionId,
+//       userId,
+//       authToken
+//     );
 
-    res.status(200).json({
-      status: "success",
-      data: {
-        deliveryPlan: {
-          ...updatedDeliveryPlan.toObject(),
-          subscription,
-        },
-      },
-    });
-  } catch (error) {
-    return next(new AppError(error.message, error.statusCode || 500));
-  }
-});
+//     res.status(200).json({
+//       status: "success",
+//       data: {
+//         deliveryPlan: {
+//           ...updatedDeliveryPlan.toObject(),
+//           subscription,
+//         },
+//       },
+//     });
+//   } catch (error) {
+//     return next(new AppError(error.message, error.statusCode || 500));
+//   }
+// });
 
 // Delete (soft) delivery plan
 exports.deleteDeliveryPlan = catchAsync(async (req, res, next) => {

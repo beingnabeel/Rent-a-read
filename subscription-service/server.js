@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
+const { initSubscriptionStatusCron } = require("./src/services/cronService");
 
 process.on("uncaughtException", (err) => {
   console.log("UNCAUGHT EXCEPTION: 🔥 shutting down...", err);
@@ -18,6 +19,9 @@ mongoose
   })
   .then((con) => {
     console.log("Connected to the database...");
+    // Initialize the cron job after database connection is established
+    initSubscriptionStatusCron();
+    console.log("Subscription status cron job initialized");
   });
 
 const port = process.env.PORT || 4004;

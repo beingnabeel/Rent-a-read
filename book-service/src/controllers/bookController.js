@@ -37,6 +37,13 @@ exports.topPickBooks = (req, res, next) => {
   next();
 };
 
+exports.justPickBooks = (req, res, next) => {
+  req.query.limit = 5;
+  req.query.sort = "availableQuantity";
+  logger.info("Just Pick Books middleware applied", { query: req.query });
+  next();
+};
+
 exports.getAllBooks = catchAsync(async (req, res, next) => {
   logger.info("Fetching all books", {
     query: req.query,

@@ -38,8 +38,12 @@ exports.getAllCategories = catchAsync(async (req, res, next) => {
         id: cat._id,
         title: cat.title,
         description: cat.description,
-        parentCategoryId: cat.parentCategoryId._id,
-        parentCategory: cat.parentCategoryId.title,
+        parentCategoryId: cat.parentCategoryId
+          ? cat.parentCategoryId._id
+          : null,
+        parentCategory: cat.parentCategoryId
+          ? cat.parentCategoryId.title
+          : null,
         status: cat.status,
         createdAt: cat.createdAt,
         createdBy: null,

@@ -28,6 +28,7 @@
     "@aws-sdk/s3-request-presigner": "^3.701.0",
     "bcryptjs": "^2.4.3",
     "books-service": "file:",
+    "cors": "^2.8.5",
     "csv-parser": "^3.0.0",
     "csv-writer": "^1.6.0",
     "dotenv": "^16.4.5",
