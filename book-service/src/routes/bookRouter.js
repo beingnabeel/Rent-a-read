@@ -26,6 +26,9 @@ router
 router
   .route("/latest")
   .get(bookController.aliasLatestBooks, bookController.getAllBooks);
+router
+  .route("/top-pick")
+  .get(bookController.topPickBooks, bookController.getAllBooks);
 
 router.route("/:id").get(bookController.getBookById).patch(
   setResourceType,

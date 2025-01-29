@@ -95,6 +95,102 @@ const userServiceProxy = createProxyMiddleware({
   },
 });
 
+// // Book Service Routes
+// const bookServiceProxy = createProxyMiddleware({
+//   target: BOOK_SERVICE_URL,
+//   changeOrigin: true,
+//   pathRewrite: {
+//     "^/api/v1/books-service": "/api/v1/books-service",
+//   },
+//   onProxyReq: function (proxyReq, req, res) {
+//     console.log("Book service proxy request path:", proxyReq.path);
+//     console.log("Request content type:", req.headers["content-type"]);
+//     console.log("Request body:", req.body);
+//     console.log("Request files:", req.files);
+
+//     // Handle multipart/form-data
+//     if (req.headers["content-type"] && req.headers["content-type"].includes("multipart/form-data")) {
+//       try {
+//         // Create a new boundary
+//         const boundary = `---------------------------${Date.now().toString(16)}`;
+        
+//         // Start building the multipart form data
+//         const lines = [];
+        
+//         // Add all fields from the body
+//         for (const [key, value] of Object.entries(req.body)) {
+//           if (value !== undefined && value !== null) {
+//             lines.push(`--${boundary}`);
+//             lines.push(`Content-Disposition: form-data; name="${key}"`);
+//             lines.push('');
+//             lines.push(value.toString());
+//           }
+//         }
+
+//         // Add the image file if present
+//         if (req.files && req.files.image && req.files.image[0]) {
+//           const file = req.files.image[0];
+//           lines.push(`--${boundary}`);
+//           lines.push(`Content-Disposition: form-data; name="file"; filename="${file.originalname}"`);
+//           lines.push(`Content-Type: ${file.mimetype}`);
+//           lines.push('');
+          
+//           // Convert buffer to base64 to avoid binary data issues
+//           const base64Data = file.buffer.toString('base64');
+//           lines.push(base64Data);
+          
+//           // Add file metadata
+//           lines.push(`--${boundary}`);
+//           lines.push(`Content-Disposition: form-data; name="originalname"`);
+//           lines.push('');
+//           lines.push(file.originalname);
+          
+//           lines.push(`--${boundary}`);
+//           lines.push(`Content-Disposition: form-data; name="mimetype"`);
+//           lines.push('');
+//           lines.push(file.mimetype);
+//         }
+
+//         // Add the final boundary
+//         lines.push(`--${boundary}--`);
+
+//         // Join all lines with CRLF
+//         const body = lines.join('\r\n');
+        
+//         // Set headers
+//         proxyReq.setHeader('Content-Type', `multipart/form-data; boundary=${boundary}`);
+//         proxyReq.setHeader('Content-Length', Buffer.byteLength(body));
+
+//         // Write the body
+//         proxyReq.write(body);
+        
+//         console.log("Successfully forwarded multipart form data");
+//       } catch (error) {
+//         console.error("Error processing multipart form data:", error);
+//         res.status(500).json({
+//           message: "Error processing form data",
+//           error: error.message
+//         });
+//       }
+//       return;
+//     }
+
+//     // Handle JSON data
+//     if (req.body && Object.keys(req.body).length > 0) {
+//       const bodyData = JSON.stringify(req.body);
+//       proxyReq.setHeader("Content-Type", "application/json");
+//       proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+//       proxyReq.write(bodyData);
+//     }
+//   },
+//   onError: (err, req, res) => {
+//     console.error("Book Service Proxy Error:", err);
+//     res.status(500).json({
+//       message: "Book service unavailable",
+//       error: err.message,
+//     });
+//   },
+// });
 // Book Service Routes
 const bookServiceProxy = createProxyMiddleware({
   target: BOOK_SERVICE_URL,
@@ -128,7 +224,6 @@ const bookServiceProxy = createProxyMiddleware({
     });
   },
 });
-
 // Order Service Routes
 const orderServiceProxy = createProxyMiddleware({
   target: ORDER_SERVICE_URL,

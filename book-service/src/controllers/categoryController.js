@@ -4,12 +4,13 @@ const Category = require("../models/categoryModel");
 const APIFeatures = require("../utils/apiFeatures");
 const ParentCategory = require("../models/parentCategoryModel");
 const { logger } = require("../utils/logger");
+const mongoose = require("mongoose");
 
 exports.getAllCategories = catchAsync(async (req, res, next) => {
-  logger.info('Fetching all categories', {
+  logger.info("Fetching all categories", {
     query: req.query,
     page: req.query.page || 1,
-    limit: req.query.limit || 10
+    limit: req.query.limit || 10,
   });
 
   const page = parseInt(req.query.page) || 1;
@@ -18,14 +19,16 @@ exports.getAllCategories = catchAsync(async (req, res, next) => {
 
   try {
     const features = new APIFeatures(query, req.query).filter().search();
-    const totalElements = await Category.countDocuments(features.query.getFilter());
+    const totalElements = await Category.countDocuments(
+      features.query.getFilter()
+    );
     features.sort().limitFields().paginate();
     const categories = await features.query;
 
     if (!categories || categories.length === 0) {
-      logger.warn('No categories found for the given criteria', {
+      logger.warn("No categories found for the given criteria", {
         query: req.query,
-        filter: features.query.getFilter()
+        filter: features.query.getFilter(),
       });
     }
 
@@ -52,36 +55,36 @@ exports.getAllCategories = catchAsync(async (req, res, next) => {
       numberOfElements: categories.length,
     };
 
-    logger.info('Categories fetched successfully', {
+    logger.info("Categories fetched successfully", {
       count: categories.length,
       totalElements,
       page,
-      limit
+      limit,
     });
 
     res.status(200).json(response);
   } catch (error) {
-    logger.error('Error fetching categories', {
+    logger.error("Error fetching categories", {
       error: error.message,
       stack: error.stack,
-      query: req.query
+      query: req.query,
     });
-    return next(new AppError('Failed to fetch categories', 500));
+    return next(new AppError("Failed to fetch categories", 500));
   }
 });
 
 exports.getCategoriesByParent = catchAsync(async (req, res, next) => {
   const parentCategoryId = req.params.parentId;
 
-  logger.info('Fetching categories by parent', {
+  logger.info("Fetching categories by parent", {
     parentCategoryId,
-    query: req.query
+    query: req.query,
   });
 
   // Validate if the parent category exists
   const parentCategory = await ParentCategory.findById(parentCategoryId);
   if (!parentCategory) {
-    logger.error('Parent category not found', { parentCategoryId });
+    logger.error("Parent category not found", { parentCategoryId });
     return next(new AppError("No parent category found with that ID", 404));
   }
 
@@ -92,15 +95,20 @@ exports.getCategoriesByParent = catchAsync(async (req, res, next) => {
     let query = Category.find({ parentCategoryId: parentCategoryId });
 
     const features = new APIFeatures(query, req.query).filter().search();
-    const totalElements = await Category.countDocuments(features.query.getFilter());
+    const totalElements = await Category.countDocuments(
+      features.query.getFilter()
+    );
     features.sort().limitFields().paginate();
 
-    const categories = await features.query.populate("parentCategoryId", "title");
+    const categories = await features.query.populate(
+      "parentCategoryId",
+      "title"
+    );
 
     if (!categories || categories.length === 0) {
-      logger.warn('No categories found for the parent category', {
+      logger.warn("No categories found for the parent category", {
         parentCategoryId,
-        query: req.query
+        query: req.query,
       });
     }
 
@@ -127,52 +135,56 @@ exports.getCategoriesByParent = catchAsync(async (req, res, next) => {
       numberOfElements: categories.length,
     };
 
-    logger.info('Categories by parent fetched successfully', {
+    logger.info("Categories by parent fetched successfully", {
       parentCategoryId,
       count: categories.length,
-      totalElements
+      totalElements,
     });
 
     res.status(200).json(response);
   } catch (error) {
-    logger.error('Error fetching categories by parent', {
+    logger.error("Error fetching categories by parent", {
       error: error.message,
       stack: error.stack,
       parentCategoryId,
-      query: req.query
+      query: req.query,
     });
-    return next(new AppError('Failed to fetch categories by parent', 500));
+    return next(new AppError("Failed to fetch categories by parent", 500));
   }
 });
 
 exports.createCategory = catchAsync(async (req, res, next) => {
-  logger.info('Creating new category', {
-    categoryData: req.body
+  logger.info("Creating new category", {
+    categoryData: req.body,
   });
 
   try {
     // Validate required fields
     if (!req.body.title || !req.body.parentCategoryId) {
-      logger.error('Missing required fields for category creation', {
-        providedFields: Object.keys(req.body)
+      logger.error("Missing required fields for category creation", {
+        providedFields: Object.keys(req.body),
       });
-      return next(new AppError('Title and parent category ID are required', 400));
+      return next(
+        new AppError("Title and parent category ID are required", 400)
+      );
     }
 
     // Validate parent category exists
-    const parentCategory = await ParentCategory.findById(req.body.parentCategoryId);
+    const parentCategory = await ParentCategory.findById(
+      req.body.parentCategoryId
+    );
     if (!parentCategory) {
-      logger.error('Invalid parent category ID', {
-        parentCategoryId: req.body.parentCategoryId
+      logger.error("Invalid parent category ID", {
+        parentCategoryId: req.body.parentCategoryId,
       });
-      return next(new AppError('Invalid parent category ID', 400));
+      return next(new AppError("Invalid parent category ID", 400));
     }
 
     const newCategory = await Category.create(req.body);
 
-    logger.info('Category created successfully', {
+    logger.info("Category created successfully", {
       categoryId: newCategory._id,
-      title: newCategory.title
+      title: newCategory.title,
     });
 
     res.status(201).json({
@@ -182,35 +194,47 @@ exports.createCategory = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error creating category', {
+    logger.error("Error creating category", {
       error: error.message,
       stack: error.stack,
-      categoryData: req.body
+      categoryData: req.body,
     });
-    return next(new AppError('Failed to create category', 500));
+    return next(new AppError("Failed to create category", 500));
   }
 });
 
 exports.updateCategory = catchAsync(async (req, res, next) => {
-  logger.info('Updating category', {
-    categoryId: req.params.id,
-    categoryData: req.body
+  const { id } = req.params;
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    logger.error("Invalid Category ID format", {
+      providedId: id,
+      validFormat: "24 character hex string",
+    });
+    return next(
+      new AppError(
+        "Invalid category ID format. Please provide a valid 24 character hex string.",
+        400
+      )
+    );
+  }
+  logger.info("Updating category", {
+    categoryId: id,
+    categoryData: req.body,
   });
-
   try {
-    const category = await Category.findByIdAndUpdate(req.params.id, req.body, {
+    const category = await Category.findByIdAndUpdate(id, req.body, {
       new: true,
       runValidators: true,
     });
 
     if (!category) {
-      logger.error('Category not found', { categoryId: req.params.id });
-      return next(new AppError('No category found with that ID', 404));
+      logger.error("Category not found", { categoryId: req.params.id });
+      return next(new AppError("No category found with that ID", 404));
     }
 
-    logger.info('Category updated successfully', {
+    logger.info("Category updated successfully", {
       categoryId: category._id,
-      title: category.title
+      title: category.title,
     });
 
     res.status(200).json({
@@ -220,27 +244,34 @@ exports.updateCategory = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating category', {
+    logger.error("Error updating category", {
       error: error.message,
       stack: error.stack,
       categoryId: req.params.id,
-      categoryData: req.body
+      categoryData: req.body,
     });
-    return next(new AppError('Failed to update category', 500));
+    return next(new AppError("Failed to update category", 500));
   }
 });
 
 exports.getCategoryById = catchAsync(async (req, res, next) => {
-  logger.info('Fetching category by ID', {
-    categoryId: req.params.id
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    logger.error("Invalid Category ID", { id: req.params.id });
+    return next(new AppError("Invalid category ID", 404));
+  }
+  logger.info("Fetching category by ID", {
+    categoryId: req.params.id,
   });
 
   try {
-    const category = await Category.findById(req.params.id).populate("parentCategoryId", "title");
+    const category = await Category.findById(req.params.id).populate(
+      "parentCategoryId",
+      "title"
+    );
 
     if (!category) {
-      logger.error('Category not found', { categoryId: req.params.id });
-      return next(new AppError('No category found with that ID', 404));
+      logger.error("Category not found", { categoryId: req.params.id });
+      return next(new AppError("No category found with that ID", 404));
     }
 
     const response = {
@@ -256,18 +287,18 @@ exports.getCategoryById = catchAsync(async (req, res, next) => {
       updatedBy: null,
     };
 
-    logger.info('Category fetched successfully', {
+    logger.info("Category fetched successfully", {
       categoryId: category._id,
-      title: category.title
+      title: category.title,
     });
 
     res.status(200).json(response);
   } catch (error) {
-    logger.error('Error fetching category by ID', {
+    logger.error("Error fetching category by ID", {
       error: error.message,
       stack: error.stack,
-      categoryId: req.params.id
+      categoryId: req.params.id,
     });
-    return next(new AppError('Failed to fetch category by ID', 500));
+    return next(new AppError("Failed to fetch category by ID", 500));
   }
 });

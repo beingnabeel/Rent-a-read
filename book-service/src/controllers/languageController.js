@@ -6,10 +6,10 @@ const language = require("../models/languageModel");
 const { logger } = require("../utils/logger");
 
 exports.getAllLanguages = catchAsync(async (req, res, next) => {
-  logger.info('Fetching all languages', {
+  logger.info("Fetching all languages", {
     query: req.query,
     page: req.query.page || 1,
-    limit: req.query.limit || 10
+    limit: req.query.limit || 10,
   });
 
   try {
@@ -20,14 +20,16 @@ exports.getAllLanguages = catchAsync(async (req, res, next) => {
     let query = language.find();
 
     const features = new APIFeatures(query, req.query).filter().search();
-    const totalElements = await language.countDocuments(features.query.getFilter());
+    const totalElements = await language.countDocuments(
+      features.query.getFilter()
+    );
     features.sort().limitFields().paginate();
     const languages = await features.query;
 
     if (!languages || languages.length === 0) {
-      logger.warn('No languages found for the given criteria', {
+      logger.warn("No languages found for the given criteria", {
         query: req.query,
-        filter: features.query.getFilter()
+        filter: features.query.getFilter(),
       });
     }
 
@@ -43,44 +45,44 @@ exports.getAllLanguages = catchAsync(async (req, res, next) => {
       numberOfElements: languages.length,
     };
 
-    logger.info('Languages fetched successfully', {
+    logger.info("Languages fetched successfully", {
       count: languages.length,
       totalElements,
       page,
-      limit
+      limit,
     });
 
     res.status(200).json(response);
   } catch (error) {
-    logger.error('Error fetching languages', {
+    logger.error("Error fetching languages", {
       error: error.message,
       stack: error.stack,
-      query: req.query
+      query: req.query,
     });
-    return next(new AppError('Failed to fetch languages', 500));
+    return next(new AppError("Failed to fetch languages", 500));
   }
 });
 
 exports.getLanguagesById = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  logger.info('Fetching language by ID', { languageId: id });
+  logger.info("Fetching language by ID", { languageId: id });
 
   // Check if the id is a valid ObjectId
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    logger.error('Invalid language ID format', { languageId: id });
+    logger.error("Invalid language ID format", { languageId: id });
     return next(new AppError("Invalid Language ID", 400));
   }
 
   try {
     const Language = await language.findById(id);
     if (!Language) {
-      logger.error('Language not found', { languageId: id });
+      logger.error("Language not found", { languageId: id });
       return next(new AppError("No language found with that ID", 404));
     }
 
-    logger.info('Language fetched successfully', {
+    logger.info("Language fetched successfully", {
       languageId: Language._id,
-      title: Language.title
+      title: Language.title,
     });
 
     res.status(200).json({
@@ -90,43 +92,43 @@ exports.getLanguagesById = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error fetching language by ID', {
+    logger.error("Error fetching language by ID", {
       error: error.message,
       stack: error.stack,
-      languageId: id
+      languageId: id,
     });
-    return next(new AppError('Failed to fetch language', 500));
+    return next(new AppError("Failed to fetch language", 500));
   }
 });
 
 exports.createLanguage = catchAsync(async (req, res, next) => {
-  logger.info('Creating new language', {
-    languageData: req.body
+  logger.info("Creating new language", {
+    languageData: req.body,
   });
 
   try {
     // Validate required fields
-    if (!req.body.title) {
-      logger.error('Missing required fields for language creation', {
-        providedFields: Object.keys(req.body)
+    if (!req.body.name) {
+      logger.error("Missing required fields for language creation", {
+        providedFields: Object.keys(req.body),
       });
-      return next(new AppError('Title is required', 400));
+      return next(new AppError("name is required", 400));
     }
 
     const existingLanguage = await language.findOne({ code: req.body.code });
     // becoz code is gonna be unique for every language
     if (existingLanguage) {
-      logger.error('Language code already exists', {
-        languageCode: req.body.code
+      logger.error("Language code already exists", {
+        languageCode: req.body.code,
       });
       return next(new AppError("Language code already exists. ", 400));
     }
 
     const newLanguage = await language.create(req.body);
 
-    logger.info('Language created successfully', {
+    logger.info("Language created successfully", {
       languageId: newLanguage._id,
-      title: newLanguage.title
+      name: newLanguage.name,
     });
 
     res.status(201).json({
@@ -136,25 +138,25 @@ exports.createLanguage = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error creating language', {
+    logger.error("Error creating language", {
       error: error.message,
       stack: error.stack,
-      languageData: req.body
+      languageData: req.body,
     });
-    return next(new AppError('Failed to create language', 500));
+    return next(new AppError("Failed to create language", 500));
   }
 });
 
 exports.updateLanguage = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  logger.info('Updating language', {
+  logger.info("Updating language", {
     languageId: id,
-    updateData: req.body
+    updateData: req.body,
   });
 
   // Check if the id is a valid ObjectId
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    logger.error('Invalid language ID format', { languageId: id });
+    logger.error("Invalid language ID format", { languageId: id });
     return next(new AppError("Invalid Language ID", 400));
   }
 
@@ -165,8 +167,8 @@ exports.updateLanguage = catchAsync(async (req, res, next) => {
         _id: { $ne: req.params.id },
       });
       if (existingLanguage) {
-        logger.error('Language code already exists', {
-          languageCode: req.body.code
+        logger.error("Language code already exists", {
+          languageCode: req.body.code,
         });
         return next(new AppError("Language code already exists. ", 400));
       }
@@ -178,13 +180,13 @@ exports.updateLanguage = catchAsync(async (req, res, next) => {
     });
 
     if (!updatedLanguage) {
-      logger.error('Language not found', { languageId: id });
+      logger.error("Language not found", { languageId: id });
       return next(new AppError("No language found with that ID", 404));
     }
 
-    logger.info('Language updated successfully', {
+    logger.info("Language updated successfully", {
       languageId: updatedLanguage._id,
-      title: updatedLanguage.title
+      title: updatedLanguage.title,
     });
 
     res.status(200).json({
@@ -194,12 +196,12 @@ exports.updateLanguage = catchAsync(async (req, res, next) => {
       },
     });
   } catch (error) {
-    logger.error('Error updating language', {
+    logger.error("Error updating language", {
       error: error.message,
       stack: error.stack,
       languageId: id,
-      updateData: req.body
+      updateData: req.body,
     });
-    return next(new AppError('Failed to update language', 500));
+    return next(new AppError("Failed to update language", 500));
   }
 });

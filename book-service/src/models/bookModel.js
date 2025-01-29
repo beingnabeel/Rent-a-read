@@ -114,12 +114,6 @@ const bookSchema = new mongoose.Schema(
       required: [true, "Maximum age is required"],
       min: [0, "Maximum age cannot be less than 0"],
       max: [100, "Maximum age cannot be more than 100"],
-      validate: {
-        validator: function (v) {
-          return v >= this.minAge;
-        },
-        message: "Maximum age must be greater than or equal to minimum age",
-      },
     },
     totalQuantity: {
       type: Number,
@@ -165,6 +159,16 @@ const bookSchema = new mongoose.Schema(
     toObject: { virtuals: true },
   }
 );
+
+bookSchema.pre("validate", function (next) {
+  if (this.maxAge < this.minAge) {
+    this.invalidate(
+      "maxAge",
+      "Maximum age must be greater than or equal to minimum age"
+    );
+  }
+  next();
+});
 
 bookSchema.pre("save", function (next) {
   this.reserved = this.reserved || 0;

@@ -391,17 +391,29 @@ exports.validateUpdateBook = async (req, res, next) => {
     }
 
     // Parse numbers, using existing values if not provided
-    const minAge =
-      body.minAge !== undefined
-        ? parseInt(body.minAge, 10)
-        : existingBook.minAge;
-    const maxAge =
-      body.maxAge !== undefined
-        ? parseInt(body.maxAge, 10)
-        : existingBook.maxAge;
+    // Handle both string and number inputs for minAge and maxAge
+    let minAge = existingBook.minAge;
+    let maxAge = existingBook.maxAge;
+
+    if (body.minAge !== undefined) {
+      // Remove quotes if present and parse
+      minAge = parseInt(body.minAge.toString().replace(/['"]+/g, ""), 10);
+      if (isNaN(minAge)) {
+        throw new Error("Invalid minAge value");
+      }
+    }
+
+    if (body.maxAge !== undefined) {
+      // Remove quotes if present and parse
+      maxAge = parseInt(body.maxAge.toString().replace(/['"]+/g, ""), 10);
+      if (isNaN(maxAge)) {
+        throw new Error("Invalid maxAge value");
+      }
+    }
 
     // Validate age range if either age is being updated
     if (body.minAge !== undefined || body.maxAge !== undefined) {
+      console.log("Validating age range:", { minAge, maxAge });
       if (minAge > maxAge) {
         if (req.file) {
           await deleteImage(req.file.key);
