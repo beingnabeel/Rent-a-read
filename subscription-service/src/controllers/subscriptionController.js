@@ -187,6 +187,27 @@ exports.initializeSubscription = catchAsync(async (req, res, next) => {
     promotionCode,
   } = req.body;
 
+  // Get user info from JWT token
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) {
+    return next(new AppError("You are not logged in", 401));
+  }
+
+  const decodedToken = require("jsonwebtoken").decode(token);
+  if (!decodedToken) {
+    return next(new AppError("Invalid token", 401));
+  }
+
+  // Check if user is authorized to create subscription
+  if (decodedToken.role !== "ADMIN" && decodedToken.userId !== userId) {
+    return next(
+      new AppError(
+        "You are not authorized to create subscription for this user",
+        403
+      )
+    );
+  }
+
   // Check for existing active subscription
   const existingSubscription = await Subscription.findOne({
     userId,
@@ -510,6 +531,85 @@ exports.getUserActiveSubscription = catchAsync(async (req, res, next) => {
     status: "success",
     data: {
       subscription,
+    },
+  });
+});
+
+// Get current active subscription for logged in user
+exports.getMyActiveSubscription = catchAsync(async (req, res, next) => {
+  // Get userId from token
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) {
+    return next(new AppError("You are not logged in", 401));
+  }
+
+  const decodedToken = require("jsonwebtoken").decode(token);
+  if (!decodedToken) {
+    return next(new AppError("Invalid token", 401));
+  }
+
+  const userId = decodedToken.userId;
+
+  // Find active subscription for the user
+  const subscription = await Subscription.findOne({
+    userId,
+    status: "ACTIVE",
+    paymentStatus: { $in: ["succeeded", "paid"] },
+    endDate: { $gt: new Date() },
+  })
+    .populate("planFrequencyTypeId")
+    .populate("planOptionTypeId")
+    .populate({
+      path: "appliedPromotionCodeId",
+      populate: {
+        path: "couponId",
+      },
+    });
+
+  if (!subscription) {
+    return next(new AppError("No active subscription found", 404));
+  }
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      subscription,
+    },
+  });
+});
+
+// Get all subscriptions for logged in user
+exports.getMySubscriptions = catchAsync(async (req, res, next) => {
+  // Get userId from token
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) {
+    return next(new AppError("You are not logged in", 401));
+  }
+
+  const decodedToken = require("jsonwebtoken").decode(token);
+  if (!decodedToken) {
+    return next(new AppError("Invalid token", 401));
+  }
+
+  const userId = decodedToken.userId;
+
+  // Find all subscriptions for the user
+  const subscriptions = await Subscription.find({ userId })
+    .populate("planFrequencyTypeId")
+    .populate("planOptionTypeId")
+    .populate({
+      path: "appliedPromotionCodeId",
+      populate: {
+        path: "couponId",
+      },
+    })
+    .sort("-createdAt"); // Most recent first
+
+  res.status(200).json({
+    status: "success",
+    results: subscriptions.length,
+    data: {
+      subscriptions,
     },
   });
 });

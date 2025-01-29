@@ -26,6 +26,49 @@ const planFrequencyTypeController = require("../controllers/planFrequencyTypeCon
 
 const router = express.Router();
 
+// Initialize subscription route
+router.post(
+  "/subscriptions/initialize",
+  validator(subscriptionValidator.initializeSubscriptionSchema),
+  subscriptionController.initializeSubscription
+);
+
+// Confirm subscription route
+router.post(
+  "/subscriptions/confirm",
+  validator(subscriptionValidator.confirmPaymentSchema),
+  subscriptionController.confirmSubscription
+);
+
+// Session details route
+router.post(
+  "/subscriptions/session/:sessionId",
+  validator(subscriptionValidator.getSessionDetailsSchema, "params"),
+  subscriptionController.getSessionDetails
+);
+
+// User-specific routes (me routes should come before :id routes)
+router.get(
+  "/subscriptions/me/active",
+  subscriptionController.getMyActiveSubscription
+);
+router.get("/subscriptions/me", subscriptionController.getMySubscriptions);
+router.get(
+  "/subscriptions/user/:userId/active",
+  subscriptionController.getUserActiveSubscription
+);
+router.get(
+  "/subscriptions/user/:userId",
+  subscriptionController.getSubscriptionByUserId
+);
+
+// Cancel subscription route
+router.patch(
+  "/subscriptions/:subscriptionId/cancel",
+  subscriptionController.cancelSubscription
+);
+
+// Generic subscription routes
 router
   .route("/subscriptions")
   .post(
@@ -74,43 +117,5 @@ router
     planFrequencyTypeController.updatePlanFrequencyType
   )
   .delete(planFrequencyTypeController.deletePlanFrequencyType);
-
-// Add these new routes
-router.post(
-  "/subscriptions/initialize",
-  validator(subscriptionValidator.initializeSubscriptionSchema),
-  subscriptionController.initializeSubscription
-);
-
-router.post(
-  "/subscriptions/confirm",
-  validator(subscriptionValidator.confirmPaymentSchema),
-  subscriptionController.confirmSubscription
-);
-
-router.patch(
-  "/subscriptions/:subscriptionId/cancel",
-  subscriptionController.cancelSubscription
-);
-
-// router.post(
-//   "/webhook",
-//   express.raw({ type: "application/json" }),
-//   subscriptionController.handleStripeWebhook
-// );
-
-// Add new route
-router.post(
-  "/subscriptions/session/:sessionId",
-  validator(subscriptionValidator.getSessionDetailsSchema, "params"),
-  subscriptionController.getSessionDetails
-);
-
-router.get('/subscriptions/user/:userId', subscriptionController.getSubscriptionByUserId);
-
-router.get(
-  "/subscriptions/user/:userId/active",
-  subscriptionController.getUserActiveSubscription
-);
 
 module.exports = router;
