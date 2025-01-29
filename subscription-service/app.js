@@ -1,3 +1,4 @@
+const cors = require("cors");
 const express = require("express");
 const morgan = require("morgan");
 const AppError = require("./src/utils/appError");
@@ -21,6 +22,14 @@ if (process.env.NODE_ENV === "development") {
 }
 
 app.use(express.json({ limit: "10kb" }));
+const corsOptions = {
+  origin: "http://localhost:3000",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 
 // Other routes
 const subscriptionRoutes = require("./src/routes/subscriptionRoutes");

@@ -309,8 +309,10 @@ exports.initializeSubscription = catchAsync(async (req, res, next) => {
             },
           ]
         : [],
-      success_url: `${clientUrl}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${clientUrl}/subscription/cancel`,
+      // success_url: `${clientUrl}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      // cancel_url: `${clientUrl}/subscription/cancel`,
+      success_url: `${clientUrl}/processing?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${clientUrl}/payment-failed`,
     });
 
     // Create subscription record

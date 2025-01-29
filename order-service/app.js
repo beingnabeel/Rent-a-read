@@ -12,8 +12,14 @@ const app = express();
 // Middleware
 app.use(morgan("dev"));
 app.use(express.json());
-app.use(cors());
+const corsOptions = {
+  origin: "http://localhost:3000",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
 
+app.use(cors(corsOptions));
 // Routes
 app.use("/api/v1/order-service/orders", orderRoutes);
 app.use("/api/v1/order-service/carts", cartRoutes);

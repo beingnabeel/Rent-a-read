@@ -1,3 +1,4 @@
+const cors = require("cors");
 const express = require("express");
 const morgan = require("morgan");
 const AppError = require("./src/utils/appError");
@@ -12,6 +13,14 @@ const bookStockRouter = require("./src/routes/bookStockRouter");
 const app = express();
 
 // Add request logging middleware
+const corsOptions = {
+  origin: "http://localhost:3000",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 app.use(requestLogger);
 
 if (process.env.NODE_ENV === "development") {
