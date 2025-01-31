@@ -50,7 +50,7 @@ const SUBSCRIPTION_SERVICE_URL =
 const USER_SERVICE_URL =
   process.env.USER_SERVICE_URL || "http://localhost:8080";
 const EBOOK_SERVICE_URL =
-  process.env.EBOOK_SERVICE_URL || "http://localhost:3000";
+  process.env.EBOOK_SERVICE_URL || "http://localhost:4006";
 
 // Debug logging
 console.log("Service URLs:", {
@@ -113,10 +113,10 @@ const userServiceProxy = createProxyMiddleware({
 //       try {
 //         // Create a new boundary
 //         const boundary = `---------------------------${Date.now().toString(16)}`;
-        
+
 //         // Start building the multipart form data
 //         const lines = [];
-        
+
 //         // Add all fields from the body
 //         for (const [key, value] of Object.entries(req.body)) {
 //           if (value !== undefined && value !== null) {
@@ -134,17 +134,17 @@ const userServiceProxy = createProxyMiddleware({
 //           lines.push(`Content-Disposition: form-data; name="file"; filename="${file.originalname}"`);
 //           lines.push(`Content-Type: ${file.mimetype}`);
 //           lines.push('');
-          
+
 //           // Convert buffer to base64 to avoid binary data issues
 //           const base64Data = file.buffer.toString('base64');
 //           lines.push(base64Data);
-          
+
 //           // Add file metadata
 //           lines.push(`--${boundary}`);
 //           lines.push(`Content-Disposition: form-data; name="originalname"`);
 //           lines.push('');
 //           lines.push(file.originalname);
-          
+
 //           lines.push(`--${boundary}`);
 //           lines.push(`Content-Disposition: form-data; name="mimetype"`);
 //           lines.push('');
@@ -156,14 +156,14 @@ const userServiceProxy = createProxyMiddleware({
 
 //         // Join all lines with CRLF
 //         const body = lines.join('\r\n');
-        
+
 //         // Set headers
 //         proxyReq.setHeader('Content-Type', `multipart/form-data; boundary=${boundary}`);
 //         proxyReq.setHeader('Content-Length', Buffer.byteLength(body));
 
 //         // Write the body
 //         proxyReq.write(body);
-        
+
 //         console.log("Successfully forwarded multipart form data");
 //       } catch (error) {
 //         console.error("Error processing multipart form data:", error);
@@ -580,7 +580,7 @@ router.use(
   createProxyMiddleware({
     target: EBOOK_SERVICE_URL,
     pathRewrite: {
-      "^/api/v1/ebook/category": "/api/category",
+      "^/api/v1/ebook/category": "/api/category/",
     },
     changeOrigin: true,
     onProxyReq: (proxyReq, req, res) => {
